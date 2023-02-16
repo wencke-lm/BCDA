@@ -47,12 +47,12 @@ def train(cfg_dict, ckpt_load, ckpt_save):
     model = VAPModel(cfg_dict["training"], cfg_dict["encoder"], cfg_dict["predictor"])
     print("COMPLETE")
 
-    # # Find Best Learning Rate
-    # trainer = pl.Trainer(gpus=-1)
-    # lr_finder = trainer.tuner.lr_find(model, dm)
-    # model.learning_rate = lr_finder.suggestion()
+    # # find best learning rate
+    # trainer = pl.Trainer(accelerator="gpu")
+    # lr_finder = trainer.tuner.lr_find(model, train_dataloaders=data)
+    # model.confg["optimizer"]["learning_rate"] = lr_finder.suggestion()
     # print("#" * 40)
-    # print("Initial Learning Rate: ", model.learning_rate)
+    # print("Initial Learning Rate: ", model.confg["optimizer"]["learning_rate"])
     # print("#" * 40)
 
     # actual training

@@ -31,7 +31,7 @@ class TestPredictor:
         batch = next(iter(DataLoader(swb, batch_size=2)))
 
         # feed batch through encoder
-        encoder = Encoder(history_dim=5)
+        encoder = Encoder(hist_bins_dim=5)
         batch = encoder(batch)
 
         predictor = Predictor(

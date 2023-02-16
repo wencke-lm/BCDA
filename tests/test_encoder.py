@@ -34,22 +34,22 @@ def batch():
 )
 class TestEncoder:
     def test_encoder_no_batch_dim(self, batch):
-        encoder = Encoder(history_dim=5)
+        encoder = Encoder(hist_bins_dim=5)
         sample = {k: v[0] for k, v in batch.items()}
         out = encoder(sample)
 
-        assert out.shape == torch.Size([1, 1000, 256])
+        assert out.shape == torch.Size([1, 800, 256])
         assert not out.isnan().any()
 
     def test_encode_with_batch_dim(self, batch):
-        encoder = Encoder(history_dim=5)
+        encoder = Encoder(hist_bins_dim=5)
         out = encoder(batch)
 
-        assert out.shape == torch.Size([2, 1000, 256])
+        assert out.shape == torch.Size([2, 800, 256])
         assert not out.isnan().any()
 
     def test_encode_same_result_batch_no_batch(self, batch):
-        encoder = Encoder(history_dim=5)
+        encoder = Encoder(hist_bins_dim=5)
         sample = {k: v[0] for k, v in batch.items()}
         out_sample = encoder(sample)
         out_batch = encoder(batch)

@@ -44,6 +44,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         va_hist_bins=[60, 30, 10, 5, 0],
         sample_len=10,
         sample_overlap=2,
+        pred_window=2,
         buffer_size=1600,
         **kwargs
     ):
@@ -57,6 +58,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         self.va_hist_bins = va_hist_bins
         self.sample_len = sample_len
         self.sample_overlap = sample_overlap
+        self.pred_window = pred_window
         self.buffer_size = buffer_size
 
         self.load_audio = kwargs.pop(
@@ -111,12 +113,25 @@ class ShuffledIterableDataset(IterableDataset, ABC):
             if not self.load_audio:
                 # load waveform if selected for batch
                 yield_item_start = yield_item.pop("start")
-                yield_item["waveform"], _ = load_waveform(
+                yield_item["waveform"], sr = load_waveform(
                     yield_item.pop("file"),
                     yield_item_start,
                     yield_item_start + self.sample_len,
                     **self.audio_kwargs
                 )
+            else:
+                sr = yield_item.pop("sample_rate")
+
+            # split predictive window from model input window
+            va_pred_strides = self.pred_window*self.n_stride
+            wave_pred_frames = self.pred_window*sr
+
+            yield_item["labels"] = yield_item["va"][:, -va_pred_strides:]
+
+            yield_item["va"] = yield_item["va"][:, :-va_pred_strides]
+            yield_item["va_hist"] = yield_item["va_hist"][:, :-va_pred_strides]
+            yield_item["waveform"] = yield_item["waveform"][:, :-wave_pred_frames]
+
             yield yield_item
 
     def _generate_sample(self):
@@ -176,7 +191,8 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                     yield {
                         "va": va_sample[:, s_i],
                         "va_hist": va_hist_sample[:, s_i],
-                        "waveform": wf_sample [:, s_i]
+                        "waveform": wf_sample [:, s_i],
+                        "sample_rate": sr
                     }
                 else:
                     # add info necessary to load audio

@@ -6,6 +6,9 @@ data/swb/swb_audios
 data/swb/swb_ms98_transcriptions
 tests/data/pseudo_switchboard/swb_audios
 
+# Model checkpoints ... for now
+data/model_checkpoints/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 

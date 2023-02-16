@@ -8,7 +8,7 @@ class Encoder(nn.Module):
     """Encode speech information.
 
     Args:
-        history_dim (int):
+        hist_bins_dim (int):
             Dimension of the voice activity history.
         pretrained (str):
             Either url to a downloadable checkpoint or
@@ -26,7 +26,7 @@ class Encoder(nn.Module):
     """
     def __init__(
         self,
-        history_dim,
+        hist_bins_dim,
         pretrained=None,
         freeze=True,
         device="cpu"
@@ -34,7 +34,7 @@ class Encoder(nn.Module):
         super().__init__()
         # voice activity conditioning
         self.va_proj = nn.Linear(2, 256)
-        self.va_hist_proj = nn.Linear(history_dim, 256)
+        self.va_hist_proj = nn.Linear(hist_bins_dim, 256)
         self.va_cond_norm = nn.LayerNorm(256)
 
         # waveform

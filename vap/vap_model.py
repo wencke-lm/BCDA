@@ -36,7 +36,7 @@ class VAPModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self._shared_step(batch, batch_idx)
-        self.log("train_los", loss)
+        self.log("train_loss", loss)
 
         return loss
 
@@ -47,16 +47,10 @@ class VAPModel(pl.LightningModule):
         # return loss
 
     def _shared_step(self, batch, batch_idx):
-        pred_idx = self.confg["pred_window"]*self.confg["n_stride"]
-        pred_idx2 = self.confg["pred_window"]*self.confg["sample_rate"]
-
-        inpt = {k:v[:, :, :-pred_idx] if k in {"va", "va_hist"} else v[:, :, :-pred_idx2] for k, v in batch.items()}
-
         labels = self.predictor.classification_head.get_gold_label(
-            batch["va"][:, :, -pred_idx:]
+            batch["labels"]
         )
-        out = self(inpt)
-
+        out = self(batch)
         loss = nn.functional.cross_entropy(out, labels)
 
         return loss
