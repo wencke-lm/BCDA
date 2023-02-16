@@ -1,0 +1,71 @@
+seed: 1
+
+encoder:
+  history_dim: 5
+  pretrained: 'https://dl.fbaipublicfiles.com/librilight/CPC_checkpoints/60k_epoch4-d0f474de.pt'
+  freeze: true
+  device: 'cuda:0'
+
+predictor:
+  dim: 256
+  ffn_dim: 768
+  n_heads: 4
+  n_layers: 4
+  activation: 'gelu'
+  dropout: 0.1
+  max_len: 1024
+  pred_bins:
+    - .1
+    - .2
+    - .3
+    - .4
+  threshold: 0.5
+
+data:
+  n_stride: 100
+  va_hist_bins:
+    - 60
+    - 30
+    - 10
+    - 5
+    - 0
+  sample_len: 10
+  sample_overlap: 2
+  buffer_size: 1600
+  text_path: 'data/swb/swb_ms98_transcriptions'
+  audio_path: 'data/swb/swb_audios'
+  load_audio: true
+  sample_rate: 16000
+  mono: true
+  normalize: true
+
+trainer:
+  deterministic: true
+  max_epochs: 60
+  accelerator: 'gpu'
+
+training:
+  pred_window: 2
+  n_stride: 100
+  sample_rate: 16000
+
+  checkpoint:
+    monitor: 'val_loss'
+    mode: 'min'
+    dirpath: 'data/model_checkpoints'
+
+  optimizer:
+    learning_rate: 3.63e-4
+    betas:
+      - 0.9
+      - 0.999
+    weight_decay: 0.001
+    lr_scheduler_interval: 'step'
+    lr_scheduler_freq: 100
+    lr_scheduler_tmax: 2500
+    train_encoder_epoch: -1
+
+  early_stopping:
+    patience: 20
+    monitor: 'val_loss'
+    mode: 'min'
