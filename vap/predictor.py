@@ -129,7 +129,6 @@ class VAPHead(nn.Module):
         self.projection_head = nn.Linear(
             dim_in, self.n_classes
         )
-        self.softmax = nn.Softmax(dim=-1)
 
     def get_gold_label(self, activity):
         """Get one-hot encoded gold activity labels.
@@ -187,7 +186,7 @@ class VAPHead(nn.Module):
             torch.tensor: (*, C_Classes)
 
         """
-        return self.softmax(self.projection_head(x))
+        return self.projection_head(x)
 
 
 class Predictor(nn.Module):
