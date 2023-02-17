@@ -131,7 +131,7 @@ class VAPHead(nn.Module):
         )
 
     def get_gold_label(self, activity):
-        """Get one-hot encoded gold activity labels.
+        """Get index encoded gold activity labels.
 
         Args:
             activity (torch.tensor):
@@ -140,7 +140,7 @@ class VAPHead(nn.Module):
                 (B_Batch, N_Speakers, L_Strides)
 
         Returns:
-            torch.tensor: (B_Batch, C_Classes)
+            torch.tensor: (B_Batch, )
 
         """
         n_samples, _, n_strides = activity.shape
@@ -164,15 +164,10 @@ class VAPHead(nn.Module):
         def binary_tensor_to_decimal(t):
             return int(reduce(lambda x, y: x + str(int(y)), t, ''), 2)
 
-        one_hot_label = torch.zeros(
-            (n_samples, self.n_classes), device=activity.device
+        return torch.tensor(
+            [binary_tensor_to_decimal(all_va[i]) for i in range(n_samples)],
+            device=activity.device
         )
-
-        for i in range(n_samples):
-            idx = binary_tensor_to_decimal(all_va[i])
-            one_hot_label[i, idx] = 1
-
-        return one_hot_label
 
     def forward(self, x):
         """Feed into voice activity classification head.

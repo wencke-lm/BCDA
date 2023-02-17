@@ -57,10 +57,7 @@ class TestPredictor:
         ])
 
         labels_out = vap_head.get_gold_label(activity)
-        labels_expected = torch.zeros(3, 256)
-        labels_expected[0, 165] = 1
-        labels_expected[1, 210] = 1
-        labels_expected[2, 255] = 1
+        labels_expected = torch.tensor([165, 210, 255])
 
         torch.testing.assert_close(labels_out, labels_expected)
 
@@ -72,7 +69,6 @@ class TestPredictor:
         ])
 
         labels_out = vap_head.get_gold_label(activity)
-        labels_expected = torch.zeros(1, 256)
-        labels_expected[0, 119] = 1
+        labels_expected = torch.tensor([119])
 
         torch.testing.assert_close(labels_out, labels_expected)
