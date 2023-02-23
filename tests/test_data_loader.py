@@ -1,12 +1,17 @@
 import os
 import random
+from unittest.mock import patch
 
 import pytest
 import torch
 from torch.utils.data import DataLoader
 
 from vap.data_loader import SwitchboardCorpus
-from vap.utils import activity_start_end_idx_to_onehot, get_audio_duration
+from vap.utils import (
+    activity_start_end_idx_to_onehot,
+    get_audio_duration,
+    load_waveform
+)
 
 
 @pytest.mark.depends(
@@ -15,6 +20,31 @@ from vap.utils import activity_start_end_idx_to_onehot, get_audio_duration
     ]
 )
 class TestShuffledIterableDataset:
+    def test_iter_splits(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            os.path.join(swb_path, "conversations.split"),
+            load_audio=True
+        )
+        with patch(
+            "vap.data_loader.load_waveform", wraps=load_waveform
+        ) as mock_function:
+            for item in iter(swb):
+                pass
+            mock_function.assert_any_call(
+                os.path.join(swb_path, "swb_audios", "sw03417.sph")
+            )
+            mock_function.assert_any_call(
+                os.path.join(swb_path, "swb_audios", "sw04709.sph")
+            )
+            assert mock_function.call_count == 2
+
     def test_iter_same_sample_number_independent_of_buffer(self):
         swb_path = os.path.join(
            "tests",

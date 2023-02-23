@@ -92,6 +92,8 @@ class Transformer(nn.Module):
         )
         x = self.transformer(x, mask=encoder_mask)
 
+        assert not x.isnan().any()
+
         return x
 
 

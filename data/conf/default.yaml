@@ -1,5 +1,27 @@
 seed: 1
 
+data:
+  split:
+    train_split: null #'tests/data/pseudo_switchboard/split_info.all' # 'data/swb/conversations.train'
+    valid_split: null #'tests/data/pseudo_switchboard/split_info.all' # 'data/swb/conversations.valid'
+  text_path: 'tests/data/pseudo_switchboard/swb_ms98_transcriptions' #'data/swb/swb_ms98_transcriptions'
+  audio_path: 'tests/data/pseudo_switchboard/swb_audios' #'data/swb/swb_audios'
+  n_stride: 100
+  va_hist_bins:
+    - 60
+    - 30
+    - 10
+    - 5
+    - 0
+  sample_len: 10
+  sample_overlap: 2
+  pred_window: 2
+  buffer_size: 1600
+  load_audio: true
+  sample_rate: 16000
+  mono: true
+  normalize: true
+
 encoder:
   hist_bins_dim: 5
   pretrained: 'https://dl.fbaipublicfiles.com/librilight/CPC_checkpoints/60k_epoch4-d0f474de.pt'
@@ -12,7 +34,7 @@ predictor:
   n_heads: 4
   n_layers: 4
   activation: 'gelu'
-  dropout: 0.1
+  dropout: 0.0
   max_len: 1024
   pred_bins:
     - .1
@@ -20,25 +42,6 @@ predictor:
     - .3
     - .4
   threshold: 0.5
-
-data:
-  n_stride: 100
-  va_hist_bins:
-    - 60
-    - 30
-    - 10
-    - 5
-    - 0
-  sample_len: 10
-  sample_overlap: 2
-  pred_window: 2
-  buffer_size: 1600
-  text_path: 'data/swb/swb_ms98_transcriptions'
-  audio_path: 'data/swb/swb_audios'
-  load_audio: true
-  sample_rate: 16000
-  mono: true
-  normalize: true
 
 trainer:
   deterministic: true

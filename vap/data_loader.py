@@ -19,6 +19,10 @@ class ShuffledIterableDataset(IterableDataset, ABC):
     Args:
         audio_path (str):
             Path to a folder holding audio files.
+        split_info (str/list):
+            Path to an utf8 encoded txt-file holding one
+            conversation identifer per line.
+            List holding all conversation identifiers.
         n_stride (int):
             Number of discrete activity values to save per s.
             Should equal waveform sample_rate divided by 160.
@@ -40,6 +44,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
     def __init__(
         self,
         audio_path,
+        split_info,
         n_stride=100,
         va_hist_bins=[60, 30, 10, 5, 0],
         sample_len=10,
@@ -48,11 +53,12 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         buffer_size=1600,
         **kwargs
     ):
-        self.audio_path = audio_path
-
-        self.data_files = os.listdir(
-            audio_path
-        )
+        # collect conversation identifiers
+        if isinstance(split_info, str):
+            with open(split_info, 'r', encoding="utf-8") as data:
+                self.data = data.read().strip().split("\n")
+        else:
+            self.data = split_info
 
         self.n_stride = n_stride
         self.va_hist_bins = va_hist_bins
@@ -61,6 +67,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         self.pred_window = pred_window
         self.buffer_size = buffer_size
 
+        self.audio_path = audio_path
         self.load_audio = kwargs.pop(
             "load_audio", False
         )
@@ -84,7 +91,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
 
         """
         # sample origins inside batch should vary between epochs
-        random.shuffle(self.data_files)
+        random.shuffle(self.data)
         sampler = self._generate_sample()
 
         buffer = []
@@ -138,8 +145,8 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         """Prepare samples with voice activity information."""
         step = self.sample_len - self.sample_overlap
 
-        for file in self.data_files:
-            dialogue_id = file[3:7]
+        for dialogue_id in self.data:
+            file = self._id_to_audio_filename(dialogue_id)
 
             # voice activity
             audio_len = get_audio_duration(
@@ -204,6 +211,22 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                     }
 
     @abstractmethod
+    def _id_to_audio_filename(self, dialogue_id):
+        """Transform conversation id to valid audio filename.
+
+        Args:
+            dialogue_id (str):
+                Conversation identifier.
+
+        Returns:
+            str:
+                Filename including file-ending (e.g. .wav),
+                but without path.
+
+        """
+        pass
+
+    @abstractmethod
     def _get_activity(self, dialogue_id):
         """Load voice activity information.
 
@@ -221,6 +244,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                 where _ is a variable number of voice activities
                 for speaker n each defined as the start and end
                 timestamp of active speech in seconds.
+
         """
         pass
 
@@ -249,10 +273,16 @@ class SwitchboardCorpus(ShuffledIterableDataset):
                 ->49/
 
     """
-    def __init__(self, audio_path, text_path, **kwargs):
-        super().__init__(audio_path, **kwargs)
+    def __init__(self, audio_path, text_path, split_info=None, **kwargs):
+        if split_info is None:
+            split_info = [f[3:7] for f in os.listdir(audio_path)]
+        super().__init__(audio_path, split_info, **kwargs)
 
         self.text_path = text_path
+
+    def _id_to_audio_filename(self, dialogue_id):
+        """Transform dialogue id to valid audio filename."""
+        return f"sw0{dialogue_id}.sph"
 
     def _get_activity(self, dialogue_id):
         """Load from Mississippi State word-unit transcript."""

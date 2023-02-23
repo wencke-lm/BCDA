@@ -6,14 +6,10 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
-    LearningRateMonitor,
-    StochasticWeightAveraging,
+    LearningRateMonitor,#
 )
-from pytorch_lightning.strategies import DDPStrategy
 from torch.utils.data import DataLoader
 import yaml
-
-import torch
 
 from vap.data_loader import SwitchboardCorpus
 from vap.vap_model import VAPModel
@@ -39,12 +35,23 @@ def train(cfg_dict, ckpt_load, ckpt_save):
         LearningRateMonitor()
     ]
 
-    # prepare data and model
+    # prepare data
     print("Load data ...")
-    swb = SwitchboardCorpus(**cfg_dict["data"])
-    data = DataLoader(swb, batch_size=16)
+    split_info = cfg_dict["data"].pop("split")
+
+    train_swb = SwitchboardCorpus(
+        split_info=split_info["train_split"], **cfg_dict["data"]
+    )
+    train_data = DataLoader(train_swb, batch_size=16)
+
+    valid_swb = SwitchboardCorpus(
+        split_info=split_info["valid_split"], **cfg_dict["data"]
+    )
+    valid_data = DataLoader(valid_swb, batch_size=16)
+
     print("COMPLETE")
 
+    # prepare model
     print("Build model ...")
     model = VAPModel(
         cfg_dict["training"],
@@ -56,7 +63,7 @@ def train(cfg_dict, ckpt_load, ckpt_save):
     # find best learning rate
     if not model.confg["optimizer"]["learning_rate"]:
         trainer = pl.Trainer(**cfg_dict["trainer"])
-        lr_finder = trainer.tuner.lr_find(model, train_dataloaders=data)
+        lr_finder = trainer.tuner.lr_find(model, train_dataloaders=train_data)
         model.confg["optimizer"]["learning_rate"] = lr_finder.suggestion()
         print("#" * 40)
         print("Initial LR: ", model.confg["optimizer"]["learning_rate"])
@@ -67,7 +74,12 @@ def train(cfg_dict, ckpt_load, ckpt_save):
         callbacks=callbacks,
         **cfg_dict["trainer"],
     )
-    trainer.fit(model, ckpt_path=ckpt_load, train_dataloaders=data)
+    trainer.fit(
+        model,
+        ckpt_path=ckpt_load,
+        train_dataloaders=train_data,
+        val_dataloaders=valid_data
+    )
 
 
 if __name__ == "__main__":

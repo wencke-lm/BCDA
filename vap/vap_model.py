@@ -42,15 +42,15 @@ class VAPModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self._shared_step(batch, batch_idx)
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, on_step=False, on_epoch=True)
 
         return loss
 
-    # def validation_step(self, batch, batch_idx):
-        # loss = self._shared_step(batch, batch_idx)
-        # self.log("val_loss", loss, on_epoch=True)
+    def validation_step(self, batch, batch_idx):
+        loss = self._shared_step(batch, batch_idx)
+        self.log("val_loss", loss, on_step=False, on_epoch=True)
 
-        # return loss
+        return loss
 
     def _shared_step(self, batch, batch_idx):
         labels = self.predictor.classification_head.get_gold_label(
