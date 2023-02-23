@@ -1,5 +1,7 @@
 # BCDA
 
+![Multitask Model Architecture](model_architecture.png)
+
 ## Set Up
 
 #### Step 0:
