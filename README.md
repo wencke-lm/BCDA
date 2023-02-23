@@ -1,6 +1,6 @@
 # BCDA
 
-![Multitask Model Architecture](model_architecture.png)
+<img src="model_architecture.png" width="500" />
 
 ## Set Up
 
