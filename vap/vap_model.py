@@ -41,16 +41,34 @@ class VAPModel(pl.LightningModule):
         return self.predictor(self.encoder(x))
 
     def training_step(self, batch, batch_idx):
-        loss = self._shared_step(batch, batch_idx)
+        loss, _, _ = self._shared_step(batch, batch_idx)
         self.log("train_loss", loss, on_step=False, on_epoch=True)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss = self._shared_step(batch, batch_idx)
+        loss, gold, pred = self._shared_step(batch, batch_idx)
         self.log("val_loss", loss, on_step=False, on_epoch=True)
 
-        return loss
+        return loss, gold, pred
+
+    def validation_epoch_end(self, validation_step_outputs):
+        all_pred = dict()
+        true_pred = dict()
+
+        for _, gold, pred in validation_step_outputs:
+            for g, p in zip(gold.tolist(), pred.tolist()):
+                all_pred[p] = all_pred.get(p, 0) + 1
+                if g == p:
+                    true_pred[p] = true_pred.get(p, 0) + 1
+
+        print("\n")
+        for label in all_pred:
+            print(label, all_pred[label], true_pred.get(label), sep="\t")
+        print("\n")
+
+        accuracy = sum(true_pred.values()) / sum(all_pred.values())
+        self.log("accuracy_epoch", accuracy)
 
     def _shared_step(self, batch, batch_idx):
         labels = self.predictor.classification_head.get_gold_label(
@@ -71,7 +89,7 @@ class VAPModel(pl.LightningModule):
                 out, labels
             )
 
-        return loss
+        return loss, labels, out.argmax(dim=-1)
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(

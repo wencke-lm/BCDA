@@ -69,6 +69,6 @@ training:
     mode: 'min'
 
   checkpoint:
-    monitor: 'train_loss'
+    monitor: 'val_loss'
     mode: 'min'
     dirpath: 'data/model_checkpoints'
