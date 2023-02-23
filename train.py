@@ -13,6 +13,8 @@ from pytorch_lightning.strategies import DDPStrategy
 from torch.utils.data import DataLoader
 import yaml
 
+import torch
+
 from vap.data_loader import SwitchboardCorpus
 from vap.vap_model import VAPModel
 
@@ -44,16 +46,21 @@ def train(cfg_dict, ckpt_load, ckpt_save):
     print("COMPLETE")
 
     print("Build model ...")
-    model = VAPModel(cfg_dict["training"], cfg_dict["encoder"], cfg_dict["predictor"])
+    model = VAPModel(
+        cfg_dict["training"],
+        cfg_dict["encoder"],
+        cfg_dict["predictor"]
+    )
     print("COMPLETE")
 
-    # # find best learning rate
-    # trainer = pl.Trainer(accelerator="gpu")
-    # lr_finder = trainer.tuner.lr_find(model, train_dataloaders=data)
-    # model.confg["optimizer"]["learning_rate"] = lr_finder.suggestion()
-    # print("#" * 40)
-    # print("Initial Learning Rate: ", model.confg["optimizer"]["learning_rate"])
-    # print("#" * 40)
+    # find best learning rate
+    if not model.confg["optimizer"]["learning_rate"]:
+        trainer = pl.Trainer(**cfg_dict["trainer"])
+        lr_finder = trainer.tuner.lr_find(model, train_dataloaders=data)
+        model.confg["optimizer"]["learning_rate"] = lr_finder.suggestion()
+        print("#" * 40)
+        print("Initial LR: ", model.confg["optimizer"]["learning_rate"])
+        print("#" * 40)
 
     # actual training
     trainer = pl.Trainer(

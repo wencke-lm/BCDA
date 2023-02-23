@@ -33,8 +33,8 @@ data:
   sample_overlap: 2
   pred_window: 2
   buffer_size: 1600
-  text_path: 'tests/data/pseudo_switchboard/swb_ms98_transcriptions'
-  audio_path: 'tests/data/pseudo_switchboard/swb_audios'
+  text_path: 'data/swb/swb_ms98_transcriptions'
+  audio_path: 'data/swb/swb_audios'
   load_audio: true
   sample_rate: 16000
   mono: true
@@ -42,10 +42,13 @@ data:
 
 trainer:
   deterministic: true
-  max_epochs: 60
+  max_epochs: 100
   accelerator: 'gpu'
 
 training:
+  class_weight: true
+  min_weight: 0.5
+
   optimizer:
     learning_rate: 3.63e-4
     betas:
@@ -58,7 +61,7 @@ training:
     train_encoder_epoch: -1
 
   early_stopping:
-    patience: 20
+    patience: 30
     monitor: 'train_loss'
     mode: 'min'
 

@@ -29,6 +29,12 @@ class VAPModel(pl.LightningModule):
         self.encoder = Encoder(**encoder_confg)
         self.predictor = Predictor(**predictor_confg)
 
+        if self.confg["class_weight"]:
+            n_classes = self.predictor.classification_head.n_classes
+            self.class_dist = torch.ones(
+                (n_classes, ), device=encoder_confg["device"]
+            )
+
         self.save_hyperparameters()
 
     def forward(self, x):
@@ -51,7 +57,19 @@ class VAPModel(pl.LightningModule):
             batch["labels"]
         )
         out = self(batch)
-        loss = nn.functional.cross_entropy(out, labels)
+
+        if self.confg["class_weight"]:
+            s = 1/(self.class_dist/self.class_dist.sum())
+            mw = self.confg["min_weight"]
+            loss = nn.functional.cross_entropy(
+                out, labels, weight=(1-mw)*(s/s.max()) + mw
+            )
+            for l in labels.tolist():
+                self.class_dist[l] += 1
+        else:
+            loss = nn.functional.cross_entropy(
+                out, labels
+            )
 
         return loss
 
