@@ -1,7 +1,26 @@
 """utils.py - Data Preprocessing"""
+from functools import reduce
+
 import torch
 import torch.nn.functional as F
 import torchaudio
+
+
+def binary_tensor_to_decimal(t):
+    """Convert active bin configuration to class index."""
+    return int(reduce(lambda x, y: x + str(int(y)), t, ''), 2)
+
+
+def decimal_to_binary_tensor(t, tensor_len=None):
+    """Convert class index to active bin configuration."""
+    bin_conf = torch.tensor(list(map(lambda x: int(x), bin(t)[2:])))
+
+    if tensor_len is None:
+        return bin_conf
+
+    expanded_bin_conf = torch.zeros(tensor_len)
+    expanded_bin_conf[-bin_conf.shape[0]:] = bin_conf
+    return expanded_bin_conf
 
 
 def time2frames(time, frame_per_s):

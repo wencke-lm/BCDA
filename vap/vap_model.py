@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from vap.encoder import Encoder
+from vap.events import is_shift_or_hold
 from vap.predictor import Predictor
 
 
@@ -32,7 +33,9 @@ class VAPModel(pl.LightningModule):
         if self.confg["class_weight"]:
             n_classes = self.predictor.classification_head.n_classes
             self.class_dist = torch.ones(
-                (n_classes, ), device=encoder_confg["device"]
+                (n_classes, ),
+                device=encoder_confg["device"],
+                requires_grad=False
             )
 
         self.save_hyperparameters()
@@ -50,17 +53,40 @@ class VAPModel(pl.LightningModule):
         loss, gold, pred = self._shared_step(batch, batch_idx)
         self.log("val_loss", loss, on_step=False, on_epoch=True)
 
-        return loss, gold, pred
+        return loss, gold, pred, batch
 
     def validation_epoch_end(self, validation_step_outputs):
+        # accuracy and confusion matrix
         all_pred = dict()
         true_pred = dict()
 
-        for _, gold, pred in validation_step_outputs:
-            for g, p in zip(gold.tolist(), pred.tolist()):
+        true_hold = 0
+        false_hold = 0
+        true_shift = 0
+        false_shift = 0
+
+        for _, gold, pred, batch in validation_step_outputs:
+            for g, p in zip(gold.tolist(), pred.argmax(dim=-1).tolist()):
                 all_pred[p] = all_pred.get(p, 0) + 1
                 if g == p:
                     true_pred[p] = true_pred.get(p, 0) + 1
+
+            for i in range(pred.shape[0]):
+                sample = {k: v[i] for k, v in batch.items()}
+                event = is_shift_or_hold(sample, 5, 100)
+                if event is not None:
+                    true_next_speaker = event[1]
+                    pred_next_speaker = self.predictor.classification_head.get_next_speaker(pred[i])
+                    if event[0] == "HOLD":
+                        if true_next_speaker == pred_next_speaker:
+                            true_hold += 1
+                        else:
+                            false_hold += 1
+                    if event[0] == "SHIFT":
+                        if true_next_speaker == pred_next_speaker:
+                            true_shift += 1
+                        else:
+                            false_shift += 1
 
         print("\n")
         for label in all_pred:
@@ -70,6 +96,28 @@ class VAPModel(pl.LightningModule):
         accuracy = sum(true_pred.values()) / sum(all_pred.values())
         self.log("accuracy_epoch", accuracy)
 
+        if true_shift:
+            shift_recall = true_shift / (true_shift + false_hold)
+            shift_prec = true_shift / (true_shift + false_shift)
+            shift_f1 = (2*shift_recall*shift_prec)/(shift_recall+shift_prec)
+        else:
+            shift_f1 = 0 
+        if true_hold:
+            hold_recall = true_hold / (true_hold + false_shift)
+            hold_prec = true_hold / (true_hold + false_hold)
+            hold_f1 = (2*hold_recall*hold_prec)/(hold_recall+hold_prec)
+        else:
+            hold_f1 = 0
+
+        try:
+            total_f1 = ((true_shift + false_hold)*shift_f1 + (true_hold + false_shift)*hold_f1)/(true_shift + false_hold + true_hold + false_shift)
+        except:
+            total_f1 = 0
+
+        self.log("hold_f1", hold_f1)
+        self.log("shift_f1", shift_f1)
+        self.log("total_f1", total_f1)
+
     def _shared_step(self, batch, batch_idx):
         labels = self.predictor.classification_head.get_gold_label(
             batch["labels"]
@@ -77,19 +125,20 @@ class VAPModel(pl.LightningModule):
         out = self(batch)
 
         if self.confg["class_weight"]:
-            s = 1/(self.class_dist/self.class_dist.sum())
             mw = self.confg["min_weight"]
+            s = ((1-mw)/self.class_dist.max())*(self.class_dist)
             loss = nn.functional.cross_entropy(
-                out, labels, weight=(1-mw)*(s/s.max()) + mw
+                out, labels, weight=(1-s)
             )
-            for l in labels.tolist():
-                self.class_dist[l] += 1
+            if self.current_epoch == 0:
+                for l in labels.tolist():
+                    self.class_dist[l] += 1
         else:
             loss = nn.functional.cross_entropy(
                 out, labels
             )
 
-        return loss, labels, out.argmax(dim=-1)
+        return loss, labels, out
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(

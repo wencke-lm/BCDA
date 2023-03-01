@@ -4,9 +4,18 @@ import torch
 
 from vap.utils import (
     activity_start_end_idx_to_onehot,
+    decimal_to_binary_tensor,
     get_activity_history,
     load_waveform
 )
+
+
+class TestDecimalToBinary:
+    def test_decimal_to_binary_tensor(self):
+        out = decimal_to_binary_tensor(9, tensor_len=5)
+        expected = torch.tensor([0., 1., 0., 0., 1.])
+
+        torch.testing.assert_close(out, expected)
 
 
 class TestLoadWaveform:

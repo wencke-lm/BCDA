@@ -72,3 +72,15 @@ class TestPredictor:
         labels_expected = torch.tensor([119])
 
         torch.testing.assert_close(labels_out, labels_expected)
+
+    def test_vap_head_get_next_speaker(self):
+        vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
+        forward_out = torch.zeros(256)
+        forward_out[15] += 0.25
+        forward_out[3] += 0.25
+        forward_out[19] += 0.50
+
+        out = vap_head.get_next_speaker(forward_out)
+        expected = 1
+
+        assert out == expected

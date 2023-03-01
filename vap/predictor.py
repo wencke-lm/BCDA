@@ -1,9 +1,10 @@
 """predictor.py - Transformer based sequence classifier"""
-from functools import reduce
 import math
 
 import torch
 import torch.nn as nn
+
+from vap.utils import binary_tensor_to_decimal, decimal_to_binary_tensor
 
 
 class StaticPositionEmbedding(nn.Module):
@@ -127,13 +128,17 @@ class VAPHead(nn.Module):
         self.pred_bins = pred_bins
         self.threshold = threshold
 
-        self.n_classes = 2 ** (2*len(pred_bins))
+        self.n_speakers = 2
+        self.n_classes = 2 ** (self.n_speakers*len(pred_bins))
         self.projection_head = nn.Linear(
             dim_in, self.n_classes
         )
 
     def get_gold_label(self, activity):
         """Get index encoded gold activity labels.
+
+        The bin configuration is treated as a binary number
+        and encoded by transforming it to a decimal.
 
         Args:
             activity (torch.tensor):
@@ -162,14 +167,48 @@ class VAPHead(nn.Module):
             start += step
         all_va = torch.stack(all_va, dim=2).flatten(1)
 
-        # convert active bin configurations to class indices
-        def binary_tensor_to_decimal(t):
-            return int(reduce(lambda x, y: x + str(int(y)), t, ''), 2)
-
         return torch.tensor(
             [binary_tensor_to_decimal(all_va[i]) for i in range(n_samples)],
             device=activity.device
         )
+
+    def get_next_speaker(self, raw_pred):
+        """Get speaker who will continue speaking.
+
+        The next speaker is determined as the speaker,
+        that is predicted to be the only active speaker
+        in the prediction window and speak at least
+        for the last two bins.
+
+        Args:
+            raw_pred (torch.tensor):
+                (, C_Classes)
+                Unaltered output of the forward pass.
+                Single sample, no batch.
+
+        Returns:
+            torch.tensor: (*, 1)
+
+        """
+        prob_speakers = torch.zeros(
+            self.n_speakers, device=raw_pred.device
+        )
+
+        for i, prob in enumerate(raw_pred):
+            bin_conf = decimal_to_binary_tensor(
+                i, int(math.log2(self.n_classes))
+            )
+            bin_conf_by_speaker = bin_conf.unfold(
+                0, len(self.pred_bins), len(self.pred_bins)
+            )
+            if torch.count_nonzero(bin_conf_by_speaker.sum(dim=-1)) == 1:
+                active_speaker = torch.nonzero(
+                    bin_conf_by_speaker.sum(dim=-1)
+                )
+                prob_speakers[active_speaker] += prob
+
+        return int(torch.argmax(prob_speakers))
+
 
     def forward(self, x):
         """Feed into voice activity classification head.

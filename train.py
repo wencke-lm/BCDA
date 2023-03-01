@@ -42,12 +42,12 @@ def train(cfg_dict, ckpt_load, ckpt_save):
     train_swb = SwitchboardCorpus(
         split_info=split_info["train_split"], **cfg_dict["data"]
     )
-    train_data = DataLoader(train_swb, batch_size=16)
+    train_data = DataLoader(train_swb, batch_size=32)
 
     valid_swb = SwitchboardCorpus(
         split_info=split_info["valid_split"], **cfg_dict["data"]
     )
-    valid_data = DataLoader(valid_swb, batch_size=16)
+    valid_data = DataLoader(valid_swb, batch_size=32)
 
     print("COMPLETE")
 
@@ -63,7 +63,11 @@ def train(cfg_dict, ckpt_load, ckpt_save):
     # find best learning rate
     if not model.confg["optimizer"]["learning_rate"]:
         trainer = pl.Trainer(**cfg_dict["trainer"])
-        lr_finder = trainer.tuner.lr_find(model, train_dataloaders=train_data)
+        lr_finder = trainer.tuner.lr_find(
+            model,
+            train_dataloaders=train_data,
+            val_dataloaders=valid_data
+        )
         model.confg["optimizer"]["learning_rate"] = lr_finder.suggestion()
         print("#" * 40)
         print("Initial LR: ", model.confg["optimizer"]["learning_rate"])
