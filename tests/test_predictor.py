@@ -73,12 +73,28 @@ class TestPredictor:
 
         torch.testing.assert_close(labels_out, labels_expected)
 
-    def test_vap_head_get_next_speaker(self):
+    def test_vap_head_get_next_speaker_overlaping_speech(self):
         vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
         forward_out = torch.zeros(256)
-        forward_out[15] += 0.25
-        forward_out[3] += 0.25
-        forward_out[19] += 0.50
+        forward_out[15] += 0.40
+        forward_out[3] += 0.40
+        # this state should be ignored
+        # because both speakers continue speaking
+        forward_out[51] += 0.60
+
+        out = vap_head.get_next_speaker(forward_out)
+        expected = 1
+
+        assert out == expected
+
+    def test_vap_head_get_next_speaker_only_short_speech(self):
+        vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
+        forward_out = torch.zeros(256)
+        forward_out[15] += 0.40
+        forward_out[3] += 0.40
+        # this state should be ignored
+        # because there is not consecutive enough speech
+        forward_out[208] += 0.60
 
         out = vap_head.get_next_speaker(forward_out)
         expected = 1

@@ -177,7 +177,7 @@ class VAPHead(nn.Module):
 
         The next speaker is determined as the speaker,
         that is predicted to be the only active speaker
-        in the prediction window and speak at least
+        in the prediction window and speaks at least
         for the last two bins.
 
         Args:
@@ -201,14 +201,26 @@ class VAPHead(nn.Module):
             bin_conf_by_speaker = bin_conf.unfold(
                 0, len(self.pred_bins), len(self.pred_bins)
             )
+            # we are only interested in states with single active speaker
             if torch.count_nonzero(bin_conf_by_speaker.sum(dim=-1)) == 1:
-                active_speaker = torch.nonzero(
+                active_speaker = int(torch.nonzero(
                     bin_conf_by_speaker.sum(dim=-1)
-                )
-                prob_speakers[active_speaker] += prob
+                ))
+                # states should also have much speech to the end of window
+                total_va = 0
+                for i, va in enumerate(
+                    bin_conf_by_speaker[active_speaker].flip(dims=[0]), 1
+                ):
+                    if not va:
+                        break
+                    total_va += self.pred_bins[-i]
+                if total_va >= 0.5:
+                    prob_speakers[active_speaker] += prob
 
         return int(torch.argmax(prob_speakers))
 
+    def is_backchannel(self, raw_pred):
+        pass
 
     def forward(self, x):
         """Feed into voice activity classification head.
