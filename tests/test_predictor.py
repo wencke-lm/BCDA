@@ -100,3 +100,75 @@ class TestPredictor:
         expected = 1
 
         assert out == expected
+
+    def test_vap_head_is_backchannel(self):
+        vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
+        forward_out = torch.zeros(256)
+        # not backchannel state
+        forward_out[240] = 0.4
+        # backchannel states
+        forward_out[24] = 0.3
+        forward_out[220] = 0.3
+
+        out = vap_head.is_backchannel(forward_out)
+        expected = True
+
+        assert out == expected
+
+    def test_vap_head_is_backchannel_overlaping_speech(self):
+        vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
+        forward_out = torch.zeros(256)
+        # not backchannel state
+        # because both speakers have much activity towards end
+        forward_out[145] = 0.6
+        # backchannel states
+        forward_out[24] = 0.2
+        forward_out[220] = 0.2
+
+        out = vap_head.is_backchannel(forward_out)
+        expected = False
+
+        assert out == expected
+
+    def test_vap_head_is_backchannel_only_short_speech(self):
+        vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
+        forward_out = torch.zeros(256)
+        # not backchannel state
+        # because no active speaker has much speech towards the end
+        forward_out[46] = 0.6
+        # backchannel states
+        forward_out[24] = 0.2
+        forward_out[220] = 0.2
+
+        out = vap_head.is_backchannel(forward_out)
+        expected = False
+
+        assert out == expected
+
+    def test_vap_head_is_backchannel_no_backchannel(self):
+        vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
+        forward_out = torch.zeros(256)
+        # not backchannel state
+        # because no active speaker has much speech towards the end
+        forward_out[1] = 0.6
+        # backchannel states
+        forward_out[24] = 0.2
+        forward_out[220] = 0.2
+
+        out = vap_head.is_backchannel(forward_out)
+        expected = False
+
+        assert out == expected
+
+    def test_vap_head_is_backchannel_expected_active_speaker(self):
+        vap_head = VAPHead(256, [.1, .2, .3, .4], 0.5)
+        forward_out = torch.zeros(256)
+        # not backchannel state
+        forward_out[240] = 0.4
+        # backchannel state but wrong active speaker
+        forward_out[244] = 0.6
+
+        out = vap_head.is_backchannel(forward_out, 1)
+        expected = False
+
+        assert out == expected

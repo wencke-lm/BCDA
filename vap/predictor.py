@@ -219,8 +219,72 @@ class VAPHead(nn.Module):
 
         return int(torch.argmax(prob_speakers))
 
-    def is_backchannel(self, raw_pred):
-        pass
+    def is_backchannel(self, raw_pred, speaker=None):
+        """Determine whether a backchannel is upcoming.
+
+        Args:
+            raw_pred (torch.tensor):
+                (, C_Classes)
+                Unaltered output of the forward pass.
+                Single sample, no batch.
+            speaker (int):
+                Index of the speaker that is considered
+                to currently hold the floor, i.e. had
+                long speeach activity preceding the
+                prediction window.
+
+        Returns:
+            bool:
+                True, if a backchannel is seen as likely.
+                False else.
+
+        """
+        prob_no_bc_bc = torch.zeros(
+            2, device=raw_pred.device
+        )
+
+        for i, prob in enumerate(raw_pred):
+            bin_conf = decimal_to_binary_tensor(
+                i, int(math.log2(self.n_classes))
+            )
+            bin_conf_by_speaker = bin_conf.unfold(
+                0, len(self.pred_bins), len(self.pred_bins)
+            )
+            active_speaker = speaker
+            total_va = 0
+            # va is an array of size equal to number of speakers
+            # starting from their activity at the end of window
+            for i, va in enumerate(
+                bin_conf_by_speaker.permute(1, 0).flip(dims=[0]), 1
+            ):
+                # active speaker should have much activity towards the end
+                if total_va < 0.4:
+                    if va.sum() == 1:
+                        if (
+                            active_speaker is None
+                            or active_speaker == int(torch.nonzero(va))
+                        ):
+                            active_speaker = int(torch.nonzero(va))
+                            total_va += self.pred_bins[-i]
+                            continue
+                    # without it, we can no longer consider the config a BC
+                    total_va = -float("inf")
+                # non-active speaker should have short activity towards the start
+                else:
+                    all_speakers = torch.nonzero(va)
+                    if (
+                        len(all_speakers) > 1
+                        or (
+                            len(all_speakers) == 1
+                            and active_speaker not in all_speakers
+                        )
+                    ):
+                        prob_no_bc_bc[1] += prob
+                        break
+            else:
+                prob_no_bc_bc[0] += prob
+
+        return bool(torch.argmax(prob_no_bc_bc))
 
     def forward(self, x):
         """Feed into voice activity classification head.
