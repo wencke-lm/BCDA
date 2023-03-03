@@ -73,8 +73,68 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         )
         self.audio_kwargs = kwargs
 
+    def select_samples(self, dialogue_id, time_stamps):
+        """Generate targeted data samples.
+
+        Args:
+            dialogue_id (int):
+                Dialogue to sample from.
+            time_stamps (list/float):
+                Timestamp marking start of prediction window
+                or list of such timestamps in seconds.
+
+        Yields:
+            dict: {
+                "va": (N_Speakers, L_Strides),
+                "va_hist": (M_Bins, L_Strides),
+                "waveform": (N_Speakers, K_Frames)
+            }
+
+        """
+        file = self._id_to_audio_filename(dialogue_id)
+
+        # voice activity
+        audio_len = get_audio_duration(
+            os.path.join(self.audio_path, file)
+        )
+        va = self._get_activity(dialogue_id)
+        va = activity_start_end_idx_to_onehot(
+            va, audio_len, self.n_stride
+        )
+
+        # voice activity history
+        bins = [idx*self.n_stride for idx in self.va_hist_bins]
+        va_hist = get_activity_history(va, bins)[0].permute(1, 0)
+
+        # waveform
+        wf, sr = load_waveform(
+            os.path.join(self.audio_path, file),
+            **self.audio_kwargs
+        )
+
+        if not isinstance(time_stamps, list):
+            time_stamps = [time_stamps]
+
+        for ts in time_stamps:
+            inp_window = self.sample_len - self.pred_window
+
+            yield {
+                "va": va
+                    [:, :int(self.n_stride*ts)]
+                    [:, -int(self.n_stride*inp_window):],
+                "va_hist": va_hist
+                    [:, :int(self.n_stride*ts)]
+                    [:, -int(self.n_stride*inp_window):],
+                "waveform": wf
+                    [:, :int(sr*ts)]
+                    [:, -int(sr*inp_window):],
+                "labels": va
+                    [:, int(self.n_stride*ts):]
+                    [:, :int(self.n_stride*self.pred_window)]
+            }
+
     def __iter__(self):
-        """Dataset Iterable.
+        """Generate random data samples.
 
         As random reads of conversation samples are expensive,
         we read in conversations as a whole. Shuffling the order
@@ -164,7 +224,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
 
             # voice activity history
             bins = [idx*self.n_stride for idx in self.va_hist_bins]
-            va_hist= get_activity_history(va, bins)[0].permute(1, 0)
+            va_hist = get_activity_history(va, bins)[0].permute(1, 0)
             va_hist_sample = va_hist.unfold(
                 dimension=1,
                 size=self.sample_len*self.n_stride,
@@ -198,7 +258,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                     yield {
                         "va": va_sample[:, s_i],
                         "va_hist": va_hist_sample[:, s_i],
-                        "waveform": wf_sample [:, s_i],
+                        "waveform": wf_sample[:, s_i],
                         "sample_rate": sr
                     }
                 else:

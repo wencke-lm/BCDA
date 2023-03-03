@@ -20,6 +20,37 @@ from vap.utils import (
     ]
 )
 class TestShuffledIterableDataset:
+    def test_select_sample(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            os.path.join(swb_path, "conversations.split"),
+            sample_rate=12000
+        )
+        sample = next(swb.select_samples(2158, 8.0))
+
+        torch.testing.assert_close(
+            sample["va"].shape, torch.Size([2, 800])
+        )
+        torch.testing.assert_close(
+            sample["va_hist"].shape, torch.Size([5, 800])
+        )
+        torch.testing.assert_close(
+            sample["waveform"].shape, torch.Size([2, 96000])
+        )
+        torch.testing.assert_close(
+            sample["labels"].shape, torch.Size([2, 200])
+        )
+        assert sample["va"][0, :190].sum() == 0
+        assert sample["va"][0, 191] == 1
+        assert sample["labels"][1, 7:179].sum() == 0
+        assert sample["labels"][1, 180] == 1
+
     def test_iter_splits(self):
         swb_path = os.path.join(
            "tests",
@@ -155,7 +186,7 @@ class TestSwitchboardCorpus:
                     if skip:
                         continue
 
-                    if word.strip() not in {"[silence]", "[noise]"} :
+                    if word.strip() not in {"[silence]", "[noise]"}:
                         va[i].append([float(start), float(end)])
 
         return va
