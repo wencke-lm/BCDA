@@ -12,7 +12,7 @@ class TestMetrics:
         labels[1, 5:105] = 1
         sample = {"va": va, "labels": labels}
 
-        assert is_shift_or_hold(sample, 5, 100) == ("SHIFT", 1)
+        assert is_shift_or_hold(sample, 5, 100) == ("SHIFT", 0)
 
     def test_is_shift_or_hold_minimal_offset(self):
         # hold
@@ -32,7 +32,7 @@ class TestMetrics:
         labels = torch.zeros((2, 200))
         sample = {"va": va, "labels": labels}
 
-        assert is_shift_or_hold(sample, 5, 100) is None
+        assert is_shift_or_hold(sample, 5, 100) == (None, None)
 
     def test_is_shift_or_hold_overlaping_past_speech(self):
         # no turn taking event
@@ -43,7 +43,7 @@ class TestMetrics:
         labels[1, 75:125] = 1
         sample = {"va": va, "labels": labels}
 
-        assert is_shift_or_hold(sample, 5, 100) is None
+        assert is_shift_or_hold(sample, 5, 100) == (None, None)
 
     def test_is_shift_or_hold_overlaping_upcoming_speech(self):
         # no turn taking event
@@ -54,7 +54,7 @@ class TestMetrics:
         labels[1, 75:125] = 1
         sample = {"va": va, "labels": labels}
 
-        assert is_shift_or_hold(sample, 5, 100) is None
+        assert is_shift_or_hold(sample, 5, 100) == (None, None)
 
     def test_is_shift_or_hold_no_mutual_silence(self):
         # no turn taking event
@@ -64,4 +64,4 @@ class TestMetrics:
         labels[1, :] = 1
         sample = {"va": va, "labels": labels}
 
-        assert is_shift_or_hold(sample, 5, 100) is None
+        assert is_shift_or_hold(sample, 5, 100) == (None, None)

@@ -1,5 +1,8 @@
 """vap_model.py - Self-supervisedly trained voice activity projection model"""
+from collections import Counter
+
 import pytorch_lightning as pl
+from sklearn.metrics import f1_score
 import torch
 import torch.nn as nn
 
@@ -56,14 +59,11 @@ class VAPModel(pl.LightningModule):
         return loss, gold, pred, batch
 
     def validation_epoch_end(self, validation_step_outputs):
-        # accuracy and confusion matrix
         all_pred = dict()
         true_pred = dict()
 
-        true_hold = 0
-        false_hold = 0
-        true_shift = 0
-        false_shift = 0
+        true_events = []
+        pred_events = []
 
         for _, gold, pred, batch in validation_step_outputs:
             for g, p in zip(gold.tolist(), pred.argmax(dim=-1).tolist()):
@@ -73,46 +73,27 @@ class VAPModel(pl.LightningModule):
 
             for i in range(pred.shape[0]):
                 sample = {k: v[i] for k, v in batch.items()}
-                event = is_shift_or_hold(sample, 5, 100)
+                event, curr_speaker = is_shift_or_hold(sample, 5, 100)
                 if event is not None:
-                    true_next_speaker = event[1]
-                    pred_next_speaker = self.predictor.classification_head.get_next_speaker(pred[i])
-                    if event[0] == "HOLD":
-                        if true_next_speaker == pred_next_speaker:
-                            true_hold += 1
-                        else:
-                            false_hold += 1
-                    if event[0] == "SHIFT":
-                        if true_next_speaker == pred_next_speaker:
-                            true_shift += 1
-                        else:
-                            false_shift += 1
+                    pred_next_speaker = (
+                        self.predictor.classification_head
+                        .get_next_speaker(pred[i])
+                    )
 
-        print("\n")
-        for label in all_pred:
-            print(label, all_pred[label], true_pred.get(label), sep="\t")
-        print("\n")
+                    true_events.append(event)
+                    if curr_speaker == pred_next_speaker:
+                        pred_events.append("HOLD")
+                    else:
+                        pred_events.append("SHIFT")
 
-        accuracy = sum(true_pred.values()) / sum(all_pred.values())
-        self.log("accuracy_epoch", accuracy)
-
-        if true_shift:
-            shift_recall = true_shift / (true_shift + false_hold)
-            shift_prec = true_shift / (true_shift + false_shift)
-            shift_f1 = (2*shift_recall*shift_prec)/(shift_recall+shift_prec)
-        else:
-            shift_f1 = 0 
-        if true_hold:
-            hold_recall = true_hold / (true_hold + false_shift)
-            hold_prec = true_hold / (true_hold + false_hold)
-            hold_f1 = (2*hold_recall*hold_prec)/(hold_recall+hold_prec)
-        else:
-            hold_f1 = 0
-
-        try:
-            total_f1 = ((true_shift + false_hold)*shift_f1 + (true_hold + false_shift)*hold_f1)/(true_shift + false_hold + true_hold + false_shift)
-        except:
-            total_f1 = 0
+        weights = Counter(true_events)
+        hold_f1, shift_f1 = f1_score(
+            true_events, pred_events, labels=["HOLD", "SHIFT"], average=None
+        )
+        total_f1 = (
+            weights["HOLD"]*hold_f1 + weights["SHIFT"]*shift_f1/
+            sum(weights.values())
+        )
 
         self.log("hold_f1", hold_f1)
         self.log("shift_f1", shift_f1)

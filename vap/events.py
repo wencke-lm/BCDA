@@ -65,6 +65,7 @@ def is_shift_or_hold(sample, silence_frms, offset_frms):
 
             # HOLD
             if pre_speaker == post_speaker:
-                return "HOLD", post_speaker
+                return "HOLD", pre_speaker
             # SHIFT
-            return "SHIFT", post_speaker
+            return "SHIFT", pre_speaker
+    return None, None
