@@ -3,6 +3,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from vap.utils import get_activity_history, decimal_to_binary_tensor
 
@@ -134,30 +135,53 @@ class VAPHead(nn.Module):
         The bin configuration is treated as a binary number
         and encoded by transforming it to a decimal.
 
-        For single sample not batch.
-
         Args:
             activity (torch.tensor):
                 Binary notion of whether a speaker is
                 speaking at a point in time.
-                (N_Speakers, L_Strides)
+                (B_Batch, N_Speakers, L_Strides)
 
         Returns:
-            torch.tensor: (B_Batch, )
+            torch.tensor
 
         """
-        bin_activity = get_activity_history(
-            activity, self.pred_bins, return_ratio=False
-        )[:, self.pred_bins[0]:, 1:]
+        n_batch, n_speakers, n_frames = activity.shape
+        hist = torch.ones(
+            n_batch, n_speakers, n_frames, len(self.pred_bins)-1,
+            device=activity.device
+        ) * -1
+
+        # else it is the sum of all values inside an interval sized moving window
+        for i, (start, end) in enumerate(zip(self.pred_bins, self.pred_bins[1:])):
+            # size of the interval/window
+            ws = start - end
+
+            # padding left so that every frame is once at the right edge of window
+            # so we have as many individual windows as frames
+            va = F.pad(activity, [ws - 1, 0])
+
+            # skip last frames not part of the history of the current frame
+            if end > 0:
+                va = va[:, :, :-end]
+
+            # implicit loop over all windows
+            filters = torch.ones((2, 1, ws), dtype=va.dtype, device=va.device)
+            window_out = F.conv1d(va, weight=filters, groups=2)
+            hist[:, :, -window_out.shape[-1]:, i] = window_out
+
+        assert torch.all(hist >= -1)
+
+        bin_activity = hist[:, :, self.pred_bins[0]:]
 
         # get activity of bin in percentage
         bin_activity /= torch.diff(
             torch.tensor(self.pred_bins, device=activity.device)
         ).abs()
+
         # apply a threshold to determine active bins
         bin_config = torch.where(
             bin_activity >= self.threshold, 1, 0
-        ).permute((1, 0, 2)).flatten(start_dim=1)
+        ).permute((0, 2, 1, 3)).flatten(start_dim=2)
 
         # translate binary active bin config to decimal value
         powers_of_two = torch.pow(

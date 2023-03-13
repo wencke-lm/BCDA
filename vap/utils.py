@@ -154,7 +154,7 @@ def activity_start_end_idx_to_onehot(activity_idx, duration, n_stride):
     return onehot_va
 
 
-def get_activity_history(activity, bin_end_idx, n_step=None, return_ratio=True):
+def get_activity_history(activity, bin_end_idx, n_step=None):
     """Concise representation of voice activity history.
 
     At each point in time/frame we represent the previous utterance
@@ -171,11 +171,6 @@ def get_activity_history(activity, bin_end_idx, n_step=None, return_ratio=True):
             Number of frames for which history should be calculated.
             e.g if n_step=2 calculate history for frame k and k-1
             If None calculate for every frame. Defaults to None.
-        return_ratio (bool): 
-            Whether to return only the accumulated speaker activity
-            over given intervals or calculate the relative
-            participation per speaker. Defaults to True.
-
 
     Returns:
         torch.tensor: (N_Speakers, K_Frames, M_Bins)
@@ -249,13 +244,10 @@ def get_activity_history(activity, bin_end_idx, n_step=None, return_ratio=True):
 
     assert torch.all(hist >= -1)
 
-    if return_ratio:
-        ratios = hist / hist.sum(dim=0)
-        # segments where both speakers are silent result in division by zero (nan)
-        # define those segments as having equal ratios across speakers
-        equal_ratio = 1 / ratios.shape[0]
-        ratios = torch.where(ratios.isnan(), equal_ratio, ratios)
+    ratios = hist / hist.sum(dim=0)
+    # segments where both speakers are silent result in division by zero (nan)
+    # define those segments as having equal ratios across speakers
+    equal_ratio = 1 / ratios.shape[0]
+    ratios = torch.where(ratios.isnan(), equal_ratio, ratios)
 
-        return ratios
-    else:
-        return hist
+    return ratios

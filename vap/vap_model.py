@@ -66,14 +66,9 @@ class VAPModel(pl.LightningModule):
         }
 
     def _shared_step(self, batch, batch_idx):
-        labels = []
-        for b in batch["va"]:
-            labels.append(
-                self.predictor.classification_head.extract_gold_labels(
-                    b
-                )
-            )
-        labels = torch.stack(labels).flatten()
+        labels = self.predictor.classification_head.extract_gold_labels(
+            batch["va"]
+        ).flatten()
 
         # split predictive window from model input window
         va_pred_strides = int(self.predictor.classification_head.pred_bins[0])
@@ -113,7 +108,7 @@ class VAPModel(pl.LightningModule):
         loss, gold, pred = self._shared_step(batch, batch_idx)
         self.log("val_loss", loss, on_step=False, on_epoch=True)
 
-        return loss, gold, pred[:, 0], batch["event"][0], batch["event"][1]
+        return loss, gold, pred[:, -1], batch["event"][0], batch["event"][1]
 
     def on_train_epoch_start(self):
         if self.current_epoch == self.confg["optimizer"]["train_encoder_epoch"]:

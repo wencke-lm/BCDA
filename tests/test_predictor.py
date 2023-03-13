@@ -52,13 +52,13 @@ class TestPredictor:
     def test_vap_head_extract_gold_labels_threshold(self):
         vap_head = VAPHead(256, [10, 9, 7, 4, 0], 0.5)
         # binary config: [1, 0, 0, 1, 0, 1, 0, 1]
-        activity = torch.tensor([
+        activity = torch.tensor([[
             [0., 1., 0., 0., 0., 0., 0., 1., 1., 0., 0.],
             [0., 0., 1., 1., 0., 1., 0., 1., 1., 1., 0.]
-        ])
+        ]])
 
         labels_out = vap_head.extract_gold_labels(activity)
-        labels_expected = torch.tensor([149])
+        labels_expected = torch.tensor([[149]])
 
         torch.testing.assert_close(labels_out, labels_expected)
 
@@ -70,12 +70,30 @@ class TestPredictor:
         # [0, 1, 0, 1, 0, 1, 0, 1]
         # [1, 1, 0, 0, 1, 1, 0, 0]
         # [1, 0, 1, 0, 1, 1, 1, 0]
-        activity = torch.tensor([
+        activity = torch.tensor([[
             [0., 1., 0., 0., 0., 0., 0., 1., 1., 0., 0., 0., 1., 1., 0., 0., 0., 0.],
             [0., 0., 1., 1., 0., 1., 0., 1., 1., 1., 0., 0., 1., 1., 0., 0., 0., 0.]
+        ]])
+
+        labels_out = vap_head.extract_gold_labels(activity)
+        labels_expected = torch.tensor([[149,  15,  47,  55,  95,  85, 204, 174]])
+
+        torch.testing.assert_close(labels_out, labels_expected)
+
+    def test_vap_head_extract_gold_labels_batch(self):
+        vap_head = VAPHead(256, [10, 9, 7, 4, 0], 0.5)
+        activity = torch.tensor([
+            [
+                [0., 1., 0., 0., 0., 0., 0., 1., 1., 0., 0., 0.],
+                [0., 0., 1., 1., 0., 1., 0., 1., 1., 1., 0., 0.]
+            ],
+            [
+                [0., 1., 1., 0., 0., 0., 1., 1., 0., 0., 0., 0.],
+                [0., 1., 1., 1., 0., 0., 1., 1., 0., 0., 0., 0.]
+            ]
         ])
 
         labels_out = vap_head.extract_gold_labels(activity)
-        labels_expected = torch.tensor([149,  15,  47,  55,  95,  85, 204, 174])
+        labels_expected = torch.tensor([[149,  15], [204, 174]])
 
         torch.testing.assert_close(labels_out, labels_expected)
