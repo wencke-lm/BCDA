@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from vap.data_loader import SwitchboardCorpus
+from vap.data_loader import SwitchboardCorpusAll
 from vap.encoder import Encoder
 
 
@@ -16,7 +16,7 @@ def batch():
            "data",
            "pseudo_switchboard"
         )
-        swb = SwitchboardCorpus(
+        swb = SwitchboardCorpusAll(
             os.path.join(swb_path, "swb_audios"),
             os.path.join(swb_path, "swb_ms98_transcriptions"),
             mono=True,

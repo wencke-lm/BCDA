@@ -2,10 +2,10 @@ seed: 1
 
 data:
   split:
-    train_split: null #'tests/data/pseudo_switchboard/split_info.all' # 'data/swb/conversations.train'
-    valid_split: null #'tests/data/pseudo_switchboard/split_info.all' # 'data/swb/conversations.valid'
-  text_path: 'tests/data/pseudo_switchboard/swb_ms98_transcriptions' #'data/swb/swb_ms98_transcriptions'
-  audio_path: 'tests/data/pseudo_switchboard/swb_audios' #'data/swb/swb_audios'
+    train_split: 'data/swb/conversations.train'
+    valid_split: 'data/swb/conversations.valid'
+  text_path: 'data/swb/swb_ms98_transcriptions'
+  audio_path: 'data/swb/swb_audios'
   n_stride: 100
   va_hist_bins:
     - 60
@@ -15,9 +15,7 @@ data:
     - 0
   sample_len: 10
   sample_overlap: 2
-  pred_window: 2
   buffer_size: 1600
-  load_audio: true
   sample_rate: 16000
   mono: true
   normalize: true
@@ -34,13 +32,14 @@ predictor:
   n_heads: 4
   n_layers: 4
   activation: 'gelu'
-  dropout: 0.0
+  dropout: 0.1
   max_len: 1024
   pred_bins:
-    - .1
-    - .2
-    - .3
-    - .4
+    - 200
+    - 180
+    - 140
+    - 80
+    - 0
   threshold: 0.5
 
 trainer:
@@ -53,7 +52,7 @@ training:
   min_weight: 0.5
 
   optimizer:
-    learning_rate: 3.63e-4
+    learning_rate: 0.0001
     betas:
       - 0.9
       - 0.999
@@ -64,11 +63,11 @@ training:
     train_encoder_epoch: -1
 
   early_stopping:
-    patience: 30
-    monitor: 'train_loss'
-    mode: 'min'
+    patience: 100
+    monitor: 'total_f1'
+    mode: 'max'
 
   checkpoint:
-    monitor: 'val_loss'
-    mode: 'min'
+    monitor: 'total_f1'
+    mode: 'max'
     dirpath: 'data/model_checkpoints'

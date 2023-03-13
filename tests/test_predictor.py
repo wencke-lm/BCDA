@@ -4,9 +4,28 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from vap.data_loader import SwitchboardCorpus
+from vap.data_loader import SwitchboardCorpusAll
 from vap.encoder import Encoder
 from vap.predictor import Predictor, VAPHead
+
+
+@pytest.fixture(scope="class")
+def batch():
+    try:
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpusAll(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            mono=True,
+            sample_rate=16000
+        )
+        yield next(iter(DataLoader(swb, batch_size=2)))
+    except:
+        pytest.skip()
 
 
 @pytest.mark.depends(
@@ -16,20 +35,7 @@ from vap.predictor import Predictor, VAPHead
     ]
 )
 class TestPredictor:
-    def test_predictor(self):
-        swb_path = os.path.join(
-           "tests",
-           "data",
-           "pseudo_switchboard"
-        )
-        swb = SwitchboardCorpus(
-            os.path.join(swb_path, "swb_audios"),
-            os.path.join(swb_path, "swb_ms98_transcriptions"),
-            mono=True,
-            sample_rate=16000
-        )
-        batch = next(iter(DataLoader(swb, batch_size=2)))
-
+    def test_predictor(self, batch):
         # feed batch through encoder
         encoder = Encoder(hist_bins_dim=5)
         batch = encoder(batch)

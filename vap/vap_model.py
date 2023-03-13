@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 
 from vap.encoder import Encoder
-from vap.events import is_shift_or_hold
 from vap.predictor import Predictor
 
 
@@ -86,20 +85,20 @@ class VAPModel(pl.LightningModule):
         batch["va_hist"] = batch["va_hist"][:, :, :-va_pred_strides]
         batch["waveform"] = batch["waveform"][:, :, :-wave_pred_frames]
 
-        out = self(batch).flatten(start_dim=0, end_dim=1)
+        out = self(batch)
 
         if self.confg["class_weight"]:
             mw = self.confg["min_weight"]
             s = ((1-mw)/self.class_dist.max())*(self.class_dist)
             loss = nn.functional.cross_entropy(
-                out, labels, weight=(1-s)
+                out.flatten(start_dim=0, end_dim=1), labels, weight=(1-s)
             )
             if self.current_epoch == 0:
                 for l in labels.tolist():
                     self.class_dist[l] += 1
         else:
             loss = nn.functional.cross_entropy(
-                out, labels
+                out.flatten(start_dim=0, end_dim=1), labels
             )
 
         return loss, labels, out
@@ -114,7 +113,7 @@ class VAPModel(pl.LightningModule):
         loss, gold, pred = self._shared_step(batch, batch_idx)
         self.log("val_loss", loss, on_step=False, on_epoch=True)
 
-        return loss, gold, pred, batch["event"], batch["pre_speaker"]
+        return loss, gold, pred[:, 0], batch["event"][0], batch["event"][1]
 
     def on_train_epoch_start(self):
         if self.current_epoch == self.confg["optimizer"]["train_encoder_epoch"]:

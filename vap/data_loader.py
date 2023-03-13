@@ -15,230 +15,185 @@ from vap.utils import (
 
 
 class ShuffledIterableDataset(IterableDataset, ABC):
-    """Iterable dataset that returns samples approximately random.
+    """Dataset loader for arbitrary dialogue datasets.
 
     Args:
         audio_path (str):
             Path to a folder holding audio files.
-        split_info (str/list):
+            One audio file per dialogue.
+        split (str/list):
             Path to an utf8 encoded txt-file holding one
-            conversation identifer per line.
-            List holding all conversation identifiers.
+            conversation identifer per line or
+            collection of relevant conversation identifiers.
         n_stride (int):
-            Number of discrete activity values to save per s.
+            Number of discrete activity values to save per second.
             Should equal waveform sample_rate divided by 160.
         va_hist_bins (list[int]):
             Right boundaries of regions for which the
             ratio of speaker's activity shall be calculated.
         sample_len (int):
-            Length of audio chunks to feed into model.
-            Given in seconds.
+            Sample length in seconds per audio chunk.
+            Holding input and prediction window.
         sample_overlap (int):
-            Overlap between consecutive audio chunks.
-            Given in seconds.
+            Length in seconds of the audio chunk overlap.
+            Holding the prediction window.
         buffer_size (int):
             Storage for non-randomly sampled data points
             from which one is randomly sampled at each
-            time step. The larger it, the closer to true
+            time step. The larger it is, the closer to true
             randomness.
+
     """
     def __init__(
         self,
         audio_path,
-        split_info,
-        mode="train",
+        split,
         n_stride=100,
         va_hist_bins=[60, 30, 10, 5, 0],
         sample_len=10,
         sample_overlap=2,
-        pred_window=2,
         buffer_size=1600,
         **kwargs
     ):
-        # collect conversation identifiers
-        if isinstance(split_info, str):
-            with open(split_info, 'r', encoding="utf-8") as data:
-                self.data = data.read().strip().split("\n")
+        if isinstance(split, str):
+            with open(split, 'r', encoding="utf-8") as data:
+                self.split = data.read().strip().split("\n")
         else:
-            self.data = split_info
-
-        self.mode = mode
+            self.split = split
 
         self.n_stride = n_stride
         self.va_hist_bins = va_hist_bins
         self.sample_len = sample_len
         self.sample_overlap = sample_overlap
-        self.pred_window = pred_window
         self.buffer_size = buffer_size
 
         self.audio_path = audio_path
-        self.load_audio = kwargs.pop(
-            "load_audio", True
-        )
         self.audio_kwargs = kwargs
+
+    def _prepare_dialogue(self, dialogue_id, load_audio=True):
+        """Extract voice activity (history) and audio information."""
+        if str(dialogue_id) not in self.split:
+            raise ValueError("Conversation with that identifier not included.")
+
+        audio_file = os.path.join(
+            self.audio_path,
+            self._id_to_audio_filename(dialogue_id)
+        )
+        audio_len = get_audio_duration(audio_file)
+
+        # voice activity
+        va = self._get_activity(dialogue_id)
+        va = activity_start_end_idx_to_onehot(
+            va, audio_len, self.n_stride
+        )
+        # voice activity history
+        bins = [idx*self.n_stride for idx in self.va_hist_bins]
+        va_hist = get_activity_history(va, bins)[0].permute(1, 0)
+
+        # waveform
+        if load_audio:
+            wf, sr = load_waveform(audio_file, **self.audio_kwargs)
+
+            return {
+                "va": va,
+                "va_hist": va_hist,
+                "waveform": wf,
+                "sample_rate": sr
+            }
+        # add info necessary to load audio
+        return {
+            "va": va,
+            "va_hist": va_hist,
+            "file": audio_file
+        }
 
     def select_samples(self, dialogue_id, time_stamps):
         """Generate targeted data samples.
 
         Args:
-            dialogue_id (int):
-                Dialogue to sample from.
-            time_stamps (list/float):
-                Timestamp marking start of prediction window
-                or list of such timestamps in seconds.
+            dialogue_id (str):
+                Dialogue identifier to sample from.
+            time_stamps (list):
+                Collection of timestamps in seconds, each
+                marking the start of a prediction window.
 
         Yields:
             dict: {
                 "va": (N_Speakers, L_Strides),
                 "va_hist": (M_Bins, L_Strides),
                 "waveform": (N_Speakers, K_Frames)
+                "sample_rate": int
             }
 
         """
-        file = self._id_to_audio_filename(dialogue_id)
+        if str(dialogue_id) not in self.split:
+            raise ValueError("Conversation with that identifier not included.")
 
-        # voice activity
-        audio_len = get_audio_duration(
-            os.path.join(self.audio_path, file)
-        )
-        va = self._get_activity(dialogue_id)
-        va = activity_start_end_idx_to_onehot(
-            va, audio_len, self.n_stride
-        )
-
-        # voice activity history
-        bins = [idx*self.n_stride for idx in self.va_hist_bins]
-        va_hist = get_activity_history(va, bins)[0].permute(1, 0)
-
-        # waveform
-        wf, sr = load_waveform(
-            os.path.join(self.audio_path, file),
-            **self.audio_kwargs
-        )
-
-        if not isinstance(time_stamps, list):
-            time_stamps = [time_stamps]
+        diag = self._prepare_dialogue(dialogue_id)
+        sr = diag["sample_rate"]
 
         for ts in time_stamps:
-            inp_window = self.sample_len - self.pred_window
+            start = ts - (self.sample_len - self.sample_overlap)
+            end = ts + self.sample_overlap
 
             yield {
-                "va": va
-                    [:, :int(self.n_stride*ts)]
-                    [:, -int(self.n_stride*inp_window):],
-                "va_hist": va_hist
-                    [:, :int(self.n_stride*ts)]
-                    [:, -int(self.n_stride*inp_window):],
-                "waveform": wf
-                    [:, :int(sr*ts)]
-                    [:, -int(sr*inp_window):],
-                "labels": va
-                    [:, int(self.n_stride*ts):]
-                    [:, :int(self.n_stride*self.pred_window)]
+                "va": diag["va"]
+                    [:, int(self.n_stride*start):int(self.n_stride*end)],
+                "va_hist": diag["va_hist"]
+                    [:, int(self.n_stride*start):int(self.n_stride*end)],
+                "waveform": diag["waveform"]
+                    [:, int(sr*start):int(sr*end)],
+                "sample_rate": sr
             }
 
-    def generate_shift_hold_samples(self, silence=10, offset=100):
-        for dialogue_id in self.data:
-            file = self._id_to_audio_filename(dialogue_id)
+    def generate_samples(self, load_audio=True):
+        """Generate non-shuffled consequtive dialogue samples.
 
-            # voice activity
-            audio_len = get_audio_duration(
-                os.path.join(self.audio_path, file)
-            )
-            va = self._get_activity(dialogue_id)
-            va = activity_start_end_idx_to_onehot(
-                va, audio_len, self.n_stride
-            )
+        Args:
+            load_audio (bool):
+                Whether to load the audiofile into a tensor
+                or instead only return filename and timestamp
+                marking the start of a sample.
 
-            # waveform
-            wf, sr = load_waveform(
-                os.path.join(self.audio_path, file),
-                **self.audio_kwargs
-            )
+        Returns:
+            If load_audio is TRUE
+            dict: {
+                "va": (N_Speakers, L_Strides),
+                "va_hist": (M_Bins, L_Strides),
+                "waveform": (N_Speakers, K_Frames)
+            }
+            If load_audio is FALSE
+            dict: {
+                "va": (N_Speakers, L_Strides),
+                "va_hist": (M_Bins, L_Strides),
+                "file": str,
+                "start": int
+            }
 
-            # voice activity history
-            bins = [idx*self.n_stride for idx in self.va_hist_bins]
-            va_hist = get_activity_history(va, bins)[0].permute(1, 0)
-
-            non_silence = torch.nonzero(va.sum(dim=0)).flatten()
-
-            for start, end in zip(non_silence, non_silence[1:]):
-                # long mutual silence
-                if end - start > silence + 1:
-                    pre_who_speaks = (
-                        va[:, start-offset-1:start+1].sum(dim=-1)
-                    )
-                    post_who_speaks = (
-                        va[:, end:end+offset].sum(dim=-1)
-                    )
-
-                    # pre-offset only one speaker active
-                    # post-offset only one speaker active
-                    if (
-                        torch.count_nonzero(pre_who_speaks) == 1
-                        and torch.count_nonzero(post_who_speaks) == 1
-                    ):
-                        pre_speaker = int(torch.nonzero(pre_who_speaks))
-                        post_speaker = int(torch.nonzero(post_who_speaks))
-
-                        # HOLD
-                        if pre_speaker == post_speaker:
-                            event = "HOLD"
-                        # SHIFT
-                        else:
-                            event = "SHIFT"
-
-                        va_idx = int(start + silence/2)
-                        va_step = int(self.sample_overlap*self.n_stride) 
-                        wave_idx = int(va_idx*(sr/self.n_stride))
-                        wave_step = int(self.sample_overlap*sr)
-
-                        if va_idx + va_step <= va.shape[-1]:
-                            yield {
-                                "va": va[:, va_idx:va_idx+va_step+1],
-                                "va_hist": va_hist[:, va_idx:va_idx+va_step+1],
-                                "waveform": wf[:, wave_idx:wave_idx+wave_step+1],
-                                "sample_rate": sr,
-                                "event": event,
-                                "pre_speaker": pre_speaker
-                            }
-
-    def generate_samples(self):
+        """
         step = self.sample_len - self.sample_overlap
 
-        for dialogue_id in self.data:
-            file = self._id_to_audio_filename(dialogue_id)
+        for dialogue_id in self.split:
+            diag = self._prepare_dialogue(dialogue_id, load_audio)
 
             # voice activity
-            audio_len = get_audio_duration(
-                os.path.join(self.audio_path, file)
-            )
-            va = self._get_activity(dialogue_id)
-            va = activity_start_end_idx_to_onehot(
-                va, audio_len, self.n_stride
-            )
-            va_sample = va.unfold(
+            va_sample = diag["va"].unfold(
                 dimension=1,
                 size=self.sample_len*self.n_stride,
                 step=step*self.n_stride,
             )
 
             # voice activity history
-            bins = [idx*self.n_stride for idx in self.va_hist_bins]
-            va_hist = get_activity_history(va, bins)[0].permute(1, 0)
-            va_hist_sample = va_hist.unfold(
+            va_hist_sample = diag["va_hist"].unfold(
                 dimension=1,
                 size=self.sample_len*self.n_stride,
                 step=step*self.n_stride,
             )
 
             # waveform
-            if self.load_audio:
-                wf, sr = load_waveform(
-                    os.path.join(self.audio_path, file),
-                    **self.audio_kwargs
-                )
-                wf_sample = wf.unfold(
+            if load_audio:
+                sr = diag["sample_rate"]
+                wf_sample = diag["waveform"].unfold(
                     dimension=1,
                     size=self.sample_len*sr,
                     step=step*sr
@@ -255,7 +210,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                 )
 
             for s_i in range(va_sample.shape[1]):
-                if self.load_audio:
+                if load_audio:
                     yield {
                         "va": va_sample[:, s_i],
                         "va_hist": va_hist_sample[:, s_i],
@@ -267,11 +222,108 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                     yield {
                         "va": va_sample[:, s_i],
                         "va_hist": va_hist_sample[:, s_i],
-                        "file": os.path.join(self.audio_path, file),
+                        "file": diag["file"],
                         "start": s_i*step
                     }
 
-    def generate_random_samples(self):
+    def generate_shift_hold_samples(self, silence=10, offset=100, load_audio=True):
+        """Generate non-shuffled shift/hold dialogue samples.
+
+        Shift/Hold describe turn-taking events where in the former a
+        speaker that was active previously stops speaking and the
+        one of its listeners begins speaking. In the latter,
+        the speaker simply continues speaking.
+
+        To limit the analysis to proper events, we require a minimum
+        duration of mutual silence at the beginning of the prediction
+        window and a offset before and after the silence, where only
+        one speaker is allowed to be active.
+
+        Args:
+            silence (int):
+                Minimum duration of mutual silence in activity frames.
+            offset (int):
+                Minimum duration of regions of single speakership
+                before and after the mutual silence in activity frames.
+            load_audio (bool):
+                Whether to load the audiofile into a tensor
+                or instead only return filename and timestamp
+                marking the start of a sample.
+
+        Returns:
+            If load_audio is TRUE
+            dict: {
+                "va": (N_Speakers, L_Strides),
+                "va_hist": (M_Bins, L_Strides),
+                "waveform": (N_Speakers, K_Frames)
+            }
+            If load_audio is FALSE
+            dict: {
+                "va": (N_Speakers, L_Strides),
+                "va_hist": (M_Bins, L_Strides),
+                "file": str,
+                "start": int
+            }
+
+        """
+        for dialogue_id in self.split:
+            diag = self._prepare_dialogue(dialogue_id, load_audio)
+
+            non_silence = torch.nonzero(diag["va"].sum(dim=0)).flatten()
+
+            for sil_start, sil_end in zip(non_silence, non_silence[1:]):
+                # long mutual silence
+                if sil_end - sil_start > silence + 1:
+                    pre_who_speaks = (
+                        diag["va"][:, sil_start-offset-1:sil_start+1].sum(dim=-1)
+                    )
+                    post_who_speaks = (
+                        diag["va"][:, sil_end:sil_end+offset].sum(dim=-1)
+                    )
+
+                    # pre-offset only one speaker active
+                    # post-offset only one speaker active
+                    if (
+                        torch.count_nonzero(pre_who_speaks) == 1
+                        and torch.count_nonzero(post_who_speaks) == 1
+                    ):
+                        mid = (int(sil_start) + silence//2)/self.n_stride
+                        start = mid - (self.sample_len - self.sample_overlap)
+                        end = mid + self.sample_overlap
+
+                        if start < 0 or end > diag["va"].shape[-1]/self.n_stride:
+                            continue
+
+                        yield_item = {
+                            "va": diag["va"]
+                                [:, round(start*self.n_stride):round(end*self.n_stride)],
+                            "va_hist": diag["va_hist"]
+                                [:, round(start*self.n_stride):round(end*self.n_stride)]
+                        }
+
+                        pre_speaker = int(torch.nonzero(pre_who_speaks))
+                        post_speaker = int(torch.nonzero(post_who_speaks))
+
+                        # HOLD
+                        if pre_speaker == post_speaker:
+                            yield_item["event"] = ("HOLD", pre_speaker)
+                        # SHIFT
+                        else:
+                            yield_item["event"] = ("SHIFT", pre_speaker)
+
+                        if load_audio:
+                            sr = diag["sample_rate"]
+                            yield_item["sample_rate"] = sr
+                            yield_item["waveform"] = (
+                                diag["waveform"][:, round(sr*start):round(sr*end)]
+                            )
+                        else:
+                            yield_item["file"] = diag["file"]
+                            yield_item["start"] = start
+
+                        yield yield_item
+
+    def generate_random_samples(self, sampler, load_audio=True):
         """Generate random data samples.
 
         As random reads of conversation samples are expensive,
@@ -285,14 +337,12 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                 "va": (N_Speakers, L_Strides),
                 "va_hist": (M_Bins, L_Strides),
                 "waveform": (N_Speakers, K_Frames)
-                "sample_rate": (1, )
+                "sample_rate": int
             }
 
         """
         # sample origins inside batch should vary between epochs
-        random.shuffle(self.data)
-        sampler = self.generate_samples()
-
+        random.shuffle(self.split)
         buffer = []
 
         # fill buffer with ordered/not random samples
@@ -316,7 +366,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
             else:
                 buffer.pop(yield_idx)
 
-            if "waveform" not in yield_item:
+            if load_audio and "waveform" not in yield_item:
                 # load waveform if selected for batch
                 yield_item_start = yield_item.pop("start")
                 yield_item["waveform"], sr = load_waveform(
@@ -355,7 +405,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         extracting them.
 
         Args:
-            dialogue_id (int):
+            dialogue_id (str):
                 Identifier of one file in the corpus.
 
         Returns:
@@ -366,17 +416,6 @@ class ShuffledIterableDataset(IterableDataset, ABC):
 
         """
         pass
-
-    def __iter__(self):
-        """Dataset Iterable."""
-        if self.mode == "train":
-            for item in self.generate_random_samples():
-                yield item
-        elif self.mode == "valid":
-            for item in self.generate_shift_hold_samples():
-                yield item
-        else:
-            raise ValueError("Unknown mode.")
 
 
 class SwitchboardCorpus(ShuffledIterableDataset):
@@ -457,3 +496,15 @@ class SwitchboardCorpus(ShuffledIterableDataset):
                 if last_start is not None:
                     va[i].append([float(last_start), float(last_end)])
         return va
+
+
+class SwitchboardCorpusAll(SwitchboardCorpus):
+    def __iter__(self):
+        for s in self.generate_random_samples(self.generate_samples()):
+            yield s
+
+
+class SwitchboardCorpusShiftHold(SwitchboardCorpus):
+    def __iter__(self):
+        for s in self.generate_shift_hold_samples():
+            yield s

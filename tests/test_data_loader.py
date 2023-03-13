@@ -6,7 +6,10 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from vap.data_loader import SwitchboardCorpus
+from vap.data_loader import (
+    SwitchboardCorpus,
+    SwitchboardCorpusAll
+)
 from vap.utils import (
     activity_start_end_idx_to_onehot,
     get_audio_duration,
@@ -20,7 +23,25 @@ from vap.utils import (
     ]
 )
 class TestShuffledIterableDataset:
-    def test_select_sample(self):
+    def test_prepare_dialogue(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            os.path.join(swb_path, "conversations.split"),
+            sample_rate=12000,
+            n_stride=100
+        )
+        diag = swb._prepare_dialogue("2158", load_audio=True)
+
+        assert diag["va"].shape[-1] == diag["va_hist"].shape[-1]
+        assert diag["va"].shape[-1] == diag["waveform"].shape[-1]//120
+
+    def test_select_samples(self):
         swb_path = os.path.join(
            "tests",
            "data",
@@ -32,22 +53,69 @@ class TestShuffledIterableDataset:
             os.path.join(swb_path, "conversations.split"),
             sample_rate=12000
         )
-        sample = next(swb.select_samples(2158, 8.0))
+        sample = next(swb.select_samples(2158, [9.0]))
 
         torch.testing.assert_close(
-            sample["va"].shape, torch.Size([2, 800])
+            sample["va"].shape, torch.Size([2, 1000])
         )
         torch.testing.assert_close(
-            sample["va_hist"].shape, torch.Size([5, 800])
+            sample["va_hist"].shape, torch.Size([5, 1000])
         )
         torch.testing.assert_close(
-            sample["waveform"].shape, torch.Size([2, 96000])
+            sample["waveform"].shape, torch.Size([2, 120000])
         )
-        torch.testing.assert_close(
-            sample["labels"].shape, torch.Size([2, 200])
+
+        assert sample["va"][0, :90].sum() == 0
+        assert sample["va"][0, 91] == 1
+        assert sample["va"][1, :95].sum() == 0
+        assert sample["va"][1, 96] == 1
+
+    def test_generate_samples_from_split(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
         )
-        assert sample["va"][0, :190].sum() == 0
-        assert sample["va"][0, 191] == 1
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            os.path.join(swb_path, "conversations.split")
+        )
+        with patch(
+            "vap.data_loader.load_waveform", wraps=load_waveform
+        ) as mock_function:
+            for item in swb.generate_samples():
+                pass
+            mock_function.assert_any_call(
+                os.path.join(swb_path, "swb_audios", "sw02158.sph")
+            )
+            mock_function.assert_any_call(
+                os.path.join(swb_path, "swb_audios", "sw04709.sph")
+            )
+            assert mock_function.call_count == 2
+
+    def test_generate_samples_same_output_independent_of_audio_load_mode(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            os.path.join(swb_path, "conversations.split")
+        )
+
+        random.seed(24)
+        sample1 = next(
+            swb.generate_random_samples(swb.generate_samples(load_audio=True))
+        )
+        random.seed(24)
+        sample2 = next(
+            swb.generate_random_samples(swb.generate_samples(load_audio=False))
+        )
+        # only works when no resampling is applied
+        torch.testing.assert_close(sample1["waveform"], sample2["waveform"])
 
     def test_generate_shift_hold_samples(self):
         swb_path = os.path.join(
@@ -58,14 +126,28 @@ class TestShuffledIterableDataset:
         swb = SwitchboardCorpus(
             os.path.join(swb_path, "swb_audios"),
             os.path.join(swb_path, "swb_ms98_transcriptions"),
-            os.path.join(swb_path, "conversations.split"),
-            sample_rate=12000
+            ["2158"]
         )
-        first_sample = next(swb.generate_shift_hold_samples())
+        sample = next(swb.generate_shift_hold_samples(load_audio=False))
 
-        assert first_sample["event"] == ("HOLD", 0)
+        assert round(float(sample["start"]), 2) == 1.61
+        assert sample["event"] == ("SHIFT", 0)
 
-    def test_iter_splits(self):
+    def test_generate_shift_hold_samples_no_incomplete_samples(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            ["2158"]
+        )
+        for sample in swb.generate_shift_hold_samples(load_audio=False):
+            assert sample["va"].shape[-1] == 1000
+
+    def test_generate_shift_hold_samples_same_output_independent_of_audio_load_mode(self):
         swb_path = os.path.join(
            "tests",
            "data",
@@ -75,22 +157,21 @@ class TestShuffledIterableDataset:
             os.path.join(swb_path, "swb_audios"),
             os.path.join(swb_path, "swb_ms98_transcriptions"),
             os.path.join(swb_path, "conversations.split"),
-            load_audio=True
+            n_stride=100
         )
-        with patch(
-            "vap.data_loader.load_waveform", wraps=load_waveform
-        ) as mock_function:
-            for item in iter(swb):
-                pass
-            mock_function.assert_any_call(
-                os.path.join(swb_path, "swb_audios", "sw03417.sph")
-            )
-            mock_function.assert_any_call(
-                os.path.join(swb_path, "swb_audios", "sw04709.sph")
-            )
-            assert mock_function.call_count == 2
 
-    def test_iter_same_sample_number_independent_of_buffer(self):
+        random.seed(24)
+        sample1 = next(
+            swb.generate_random_samples(swb.generate_shift_hold_samples(load_audio=True))
+        )
+        random.seed(24)
+        sample2 = next(
+            swb.generate_random_samples(swb.generate_shift_hold_samples(load_audio=False))
+        )
+        # only works when no resampling is applied
+        torch.testing.assert_close(sample1["waveform"], sample2["waveform"])
+
+    def test_generate_random_samples_same_number_independent_of_buffer(self):
         swb_path = os.path.join(
            "tests",
            "data",
@@ -108,15 +189,18 @@ class TestShuffledIterableDataset:
             os.path.join(swb_path, "swb_ms98_transcriptions"),
             buffer_size=float("inf")
         )
-        assert sum(1 for _ in iter(swb1)) == sum(1 for _ in iter(swb2))
+        assert (
+            sum(1 for _ in swb1.generate_random_samples(swb1.generate_samples()))
+            == sum(1 for _ in swb2.generate_random_samples(swb2.generate_samples()))
+        )
 
-    def test_iter_in_pytorch_dataloder_all_samples_included(self):
+    def test_generate_random_samples_in_pytorch_dataloder_all_samples_included(self):
         swb_path = os.path.join(
            "tests",
            "data",
            "pseudo_switchboard"
         )
-        swb = SwitchboardCorpus(
+        swb = SwitchboardCorpusAll(
             os.path.join(swb_path, "swb_audios"),
             os.path.join(swb_path, "swb_ms98_transcriptions"),
             buffer_size=10
@@ -144,28 +228,6 @@ class TestShuffledIterableDataset:
             any(torch.equal(va1, va2) for va2 in all_va_2)
             for va1 in all_va_1
         )
-
-    def test_iter_same_output_independent_of_audio_load_mode(self):
-        swb_path = os.path.join(
-           "tests",
-           "data",
-           "pseudo_switchboard"
-        )
-        swb1 = SwitchboardCorpus(
-            os.path.join(swb_path, "swb_audios"),
-            os.path.join(swb_path, "swb_ms98_transcriptions"),
-            load_audio=True
-        )
-        swb2 = SwitchboardCorpus(
-            os.path.join(swb_path, "swb_audios"),
-            os.path.join(swb_path, "swb_ms98_transcriptions"),
-            load_audio=False
-        )
-        random.seed(24)
-        sample1 = next(iter(swb1))
-        random.seed(24)
-        sample2 = next(iter(swb2))
-        torch.testing.assert_close(sample1["waveform"], sample2["waveform"])
 
 
 @pytest.mark.depends(
