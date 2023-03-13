@@ -40,12 +40,12 @@ def train(cfg_dict, ckpt_load, ckpt_save):
     split_info = cfg_dict["data"].pop("split")
 
     train_swb = SwitchboardCorpus(
-        split_info=split_info["train_split"], **cfg_dict["data"]
+        split_info=split_info["train_split"], mode="train", **cfg_dict["data"]
     )
     train_data = DataLoader(train_swb, batch_size=32)
 
     valid_swb = SwitchboardCorpus(
-        split_info=split_info["valid_split"], **cfg_dict["data"]
+        split_info=split_info["valid_split"], mode="valid", **cfg_dict["data"]
     )
     valid_data = DataLoader(valid_swb, batch_size=32)
 

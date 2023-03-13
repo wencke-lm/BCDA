@@ -67,10 +67,26 @@ class VAPModel(pl.LightningModule):
         }
 
     def _shared_step(self, batch, batch_idx):
-        labels = self.predictor.classification_head.get_gold_label(
-            batch["labels"]
+        labels = []
+        for b in batch["va"]:
+            labels.append(
+                self.predictor.classification_head.extract_gold_labels(
+                    b
+                )
+            )
+        labels = torch.stack(labels).flatten()
+
+        # split predictive window from model input window
+        va_pred_strides = int(self.predictor.classification_head.pred_bins[0])
+        wave_pred_frames = int(
+            va_pred_strides*(batch["waveform"].shape[-1]/batch["va"].shape[-1])
         )
-        out = self(batch)
+
+        batch["va"] = batch["va"][:, :, :-va_pred_strides]
+        batch["va_hist"] = batch["va_hist"][:, :, :-va_pred_strides]
+        batch["waveform"] = batch["waveform"][:, :, :-wave_pred_frames]
+
+        out = self(batch).flatten(start_dim=0, end_dim=1)
 
         if self.confg["class_weight"]:
             mw = self.confg["min_weight"]
@@ -98,7 +114,7 @@ class VAPModel(pl.LightningModule):
         loss, gold, pred = self._shared_step(batch, batch_idx)
         self.log("val_loss", loss, on_step=False, on_epoch=True)
 
-        return loss, gold, pred, batch
+        return loss, gold, pred, batch["event"], batch["pre_speaker"]
 
     def on_train_epoch_start(self):
         if self.current_epoch == self.confg["optimizer"]["train_encoder_epoch"]:
@@ -111,26 +127,25 @@ class VAPModel(pl.LightningModule):
         true_events = []
         pred_events = []
 
-        for _, gold, pred, batch in validation_step_outputs:
+        for _, gold, pred, event, pre_speaker in validation_step_outputs:
             for g, p in zip(gold.tolist(), pred.argmax(dim=-1).tolist()):
                 all_pred[p] = all_pred.get(p, 0) + 1
                 if g == p:
                     true_pred[p] = true_pred.get(p, 0) + 1
 
             for i in range(pred.shape[0]):
-                sample = {k: v[i] for k, v in batch.items()}
-                event, curr_speaker = is_shift_or_hold(sample, 5, 100)
-                if event is not None:
-                    pred_next_speaker = (
-                        self.predictor.classification_head
-                        .get_next_speaker(pred[i])
-                    )
+                e, sp = event[i], pre_speaker[i]
 
-                    true_events.append(event)
-                    if curr_speaker == pred_next_speaker:
-                        pred_events.append("HOLD")
-                    else:
-                        pred_events.append("SHIFT")
+                pred_next_speaker = (
+                    self.predictor.classification_head
+                    .get_next_speaker(pred[i])
+                )
+
+                true_events.append(e)
+                if sp == pred_next_speaker:
+                    pred_events.append("HOLD")
+                else:
+                    pred_events.append("SHIFT")
 
         print("\n")
         for label in all_pred:
@@ -145,6 +160,8 @@ class VAPModel(pl.LightningModule):
             (weights["HOLD"]*hold_f1 + weights["SHIFT"]*shift_f1)/
             sum(weights.values())
         )
+
+        print(hold_f1, shift_f1, total_f1)
 
         self.log("hold_f1", hold_f1)
         self.log("shift_f1", shift_f1)

@@ -48,8 +48,22 @@ class TestShuffledIterableDataset:
         )
         assert sample["va"][0, :190].sum() == 0
         assert sample["va"][0, 191] == 1
-        assert sample["labels"][1, 7:179].sum() == 0
-        assert sample["labels"][1, 180] == 1
+
+    def test_generate_shift_hold_samples(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            os.path.join(swb_path, "conversations.split"),
+            sample_rate=12000
+        )
+        first_sample = next(swb.generate_shift_hold_samples())
+
+        assert first_sample["event"] == ("HOLD", 0)
 
     def test_iter_splits(self):
         swb_path = os.path.join(

@@ -154,7 +154,7 @@ def activity_start_end_idx_to_onehot(activity_idx, duration, n_stride):
     return onehot_va
 
 
-def get_activity_history(activity, bin_end_idx, n_step=None):
+def get_activity_history(activity, bin_end_idx, n_step=None, return_ratio=True):
     """Concise representation of voice activity history.
 
     At each point in time/frame we represent the previous utterance
@@ -171,6 +171,11 @@ def get_activity_history(activity, bin_end_idx, n_step=None):
             Number of frames for which history should be calculated.
             e.g if n_step=2 calculate history for frame k and k-1
             If None calculate for every frame. Defaults to None.
+        return_ratio (bool): 
+            Whether to return only the accumulated speaker activity
+            over given intervals or calculate the relative
+            participation per speaker. Defaults to True.
+
 
     Returns:
         torch.tensor: (N_Speakers, K_Frames, M_Bins)
@@ -206,7 +211,8 @@ def get_activity_history(activity, bin_end_idx, n_step=None):
     # adds all activity from frame 6 to 5 (included)
     n_speakers, n_frames = activity.shape
     hist = torch.ones(
-        n_speakers, n_step or n_frames, len(bin_end_idx)
+        n_speakers, n_step or n_frames, len(bin_end_idx),
+        device=activity.device
     ) * -1
 
     # for the left-most bin starting at -inf this is the cumulative sum
@@ -235,7 +241,7 @@ def get_activity_history(activity, bin_end_idx, n_step=None):
             va = va[:, -(ws + n_step - 1):]
 
         # implicit loop over all windows
-        filters = torch.ones((1, 1, ws), dtype=va.dtype)
+        filters = torch.ones((1, 1, ws), dtype=va.dtype, device=va.device)
         window_out = F.conv1d(
             va.unsqueeze(1), weight=filters
         ).squeeze(1)
@@ -243,10 +249,13 @@ def get_activity_history(activity, bin_end_idx, n_step=None):
 
     assert torch.all(hist >= -1)
 
-    ratios = hist / hist.sum(dim=0)
-    # segments where both speakers are silent result in division by zero (nan)
-    # define those segments as having equal ratios across speakers
-    equal_ratio = 1 / ratios.shape[0]
-    ratios = torch.where(ratios.isnan(), equal_ratio, ratios)
+    if return_ratio:
+        ratios = hist / hist.sum(dim=0)
+        # segments where both speakers are silent result in division by zero (nan)
+        # define those segments as having equal ratios across speakers
+        equal_ratio = 1 / ratios.shape[0]
+        ratios = torch.where(ratios.isnan(), equal_ratio, ratios)
 
-    return ratios
+        return ratios
+    else:
+        return hist

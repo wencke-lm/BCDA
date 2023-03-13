@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 import os
 import random
 
+import torch
 from torch.utils.data import IterableDataset
 
 from vap.utils import (
@@ -45,6 +46,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         self,
         audio_path,
         split_info,
+        mode="train",
         n_stride=100,
         va_hist_bins=[60, 30, 10, 5, 0],
         sample_len=10,
@@ -60,6 +62,8 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         else:
             self.data = split_info
 
+        self.mode = mode
+
         self.n_stride = n_stride
         self.va_hist_bins = va_hist_bins
         self.sample_len = sample_len
@@ -69,7 +73,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
 
         self.audio_path = audio_path
         self.load_audio = kwargs.pop(
-            "load_audio", False
+            "load_audio", True
         )
         self.audio_kwargs = kwargs
 
@@ -133,76 +137,73 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                     [:, :int(self.n_stride*self.pred_window)]
             }
 
-    def __iter__(self):
-        """Generate random data samples.
+    def generate_shift_hold_samples(self, silence=10, offset=100):
+        for dialogue_id in self.data:
+            file = self._id_to_audio_filename(dialogue_id)
 
-        As random reads of conversation samples are expensive,
-        we read in conversations as a whole. Shuffling the order
-        of conversations for each epoch and maintaining a buffer
-        large enough to hold samples from several conversations,
-        allows us to create approximate random batches.
+            # voice activity
+            audio_len = get_audio_duration(
+                os.path.join(self.audio_path, file)
+            )
+            va = self._get_activity(dialogue_id)
+            va = activity_start_end_idx_to_onehot(
+                va, audio_len, self.n_stride
+            )
 
-        Yields:
-            dict: {
-                "va": (N_Speakers, L_Strides),
-                "va_hist": (M_Bins, L_Strides),
-                "waveform": (N_Speakers, K_Frames)
-            }
+            # waveform
+            wf, sr = load_waveform(
+                os.path.join(self.audio_path, file),
+                **self.audio_kwargs
+            )
 
-        """
-        # sample origins inside batch should vary between epochs
-        random.shuffle(self.data)
-        sampler = self._generate_sample()
+            # voice activity history
+            bins = [idx*self.n_stride for idx in self.va_hist_bins]
+            va_hist = get_activity_history(va, bins)[0].permute(1, 0)
 
-        buffer = []
+            non_silence = torch.nonzero(va.sum(dim=0)).flatten()
 
-        # fill buffer with ordered/not random samples
-        try:
-            while len(buffer) < self.buffer_size:
-                buffer.append(next(sampler))
-        except StopIteration:
-            self.buffer_size = len(buffer)
+            for start, end in zip(non_silence, non_silence[1:]):
+                # long mutual silence
+                if end - start > silence + 1:
+                    pre_who_speaks = (
+                        va[:, start-offset-1:start+1].sum(dim=-1)
+                    )
+                    post_who_speaks = (
+                        va[:, end:end+offset].sum(dim=-1)
+                    )
 
-        # randomly sample from buffer
-        while len(buffer) > 0:
-            yield_idx = random.randrange(len(buffer))
-            yield_item = buffer[yield_idx]
+                    # pre-offset only one speaker active
+                    # post-offset only one speaker active
+                    if (
+                        torch.count_nonzero(pre_who_speaks) == 1
+                        and torch.count_nonzero(post_who_speaks) == 1
+                    ):
+                        pre_speaker = int(torch.nonzero(pre_who_speaks))
+                        post_speaker = int(torch.nonzero(post_who_speaks))
 
-            if len(buffer) == self.buffer_size:
-                try:
-                    new_item = next(sampler)
-                    buffer[yield_idx] = new_item
-                except StopIteration:
-                    buffer.pop(yield_idx)
-            else:
-                buffer.pop(yield_idx)
+                        # HOLD
+                        if pre_speaker == post_speaker:
+                            event = "HOLD"
+                        # SHIFT
+                        else:
+                            event = "SHIFT"
 
-            if not self.load_audio:
-                # load waveform if selected for batch
-                yield_item_start = yield_item.pop("start")
-                yield_item["waveform"], sr = load_waveform(
-                    yield_item.pop("file"),
-                    yield_item_start,
-                    yield_item_start + self.sample_len,
-                    **self.audio_kwargs
-                )
-            else:
-                sr = yield_item.pop("sample_rate")
+                        va_idx = int(start + silence/2)
+                        va_step = int(self.sample_overlap*self.n_stride) 
+                        wave_idx = int(va_idx*(sr/self.n_stride))
+                        wave_step = int(self.sample_overlap*sr)
 
-            # split predictive window from model input window
-            va_pred_strides = self.pred_window*self.n_stride
-            wave_pred_frames = self.pred_window*sr
+                        if va_idx + va_step <= va.shape[-1]:
+                            yield {
+                                "va": va[:, va_idx:va_idx+va_step+1],
+                                "va_hist": va_hist[:, va_idx:va_idx+va_step+1],
+                                "waveform": wf[:, wave_idx:wave_idx+wave_step+1],
+                                "sample_rate": sr,
+                                "event": event,
+                                "pre_speaker": pre_speaker
+                            }
 
-            yield_item["labels"] = yield_item["va"][:, -va_pred_strides:]
-
-            yield_item["va"] = yield_item["va"][:, :-va_pred_strides]
-            yield_item["va_hist"] = yield_item["va_hist"][:, :-va_pred_strides]
-            yield_item["waveform"] = yield_item["waveform"][:, :-wave_pred_frames]
-
-            yield yield_item
-
-    def _generate_sample(self):
-        """Prepare samples with voice activity information."""
+    def generate_samples(self):
         step = self.sample_len - self.sample_overlap
 
         for dialogue_id in self.data:
@@ -270,6 +271,64 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                         "start": s_i*step
                     }
 
+    def generate_random_samples(self):
+        """Generate random data samples.
+
+        As random reads of conversation samples are expensive,
+        we read in conversations as a whole. Shuffling the order
+        of conversations for each epoch and maintaining a buffer
+        large enough to hold samples from several conversations,
+        allows us to create approximate random batches.
+
+        Yields:
+            dict: {
+                "va": (N_Speakers, L_Strides),
+                "va_hist": (M_Bins, L_Strides),
+                "waveform": (N_Speakers, K_Frames)
+                "sample_rate": (1, )
+            }
+
+        """
+        # sample origins inside batch should vary between epochs
+        random.shuffle(self.data)
+        sampler = self.generate_samples()
+
+        buffer = []
+
+        # fill buffer with ordered/not random samples
+        try:
+            while len(buffer) < self.buffer_size:
+                buffer.append(next(sampler))
+        except StopIteration:
+            self.buffer_size = len(buffer)
+
+        # randomly sample from buffer
+        while len(buffer) > 0:
+            yield_idx = random.randrange(len(buffer))
+            yield_item = buffer[yield_idx]
+
+            if len(buffer) == self.buffer_size:
+                try:
+                    new_item = next(sampler)
+                    buffer[yield_idx] = new_item
+                except StopIteration:
+                    buffer.pop(yield_idx)
+            else:
+                buffer.pop(yield_idx)
+
+            if "waveform" not in yield_item:
+                # load waveform if selected for batch
+                yield_item_start = yield_item.pop("start")
+                yield_item["waveform"], sr = load_waveform(
+                    yield_item.pop("file"),
+                    yield_item_start,
+                    yield_item_start + self.sample_len,
+                    **self.audio_kwargs
+                )
+                yield_item["sample_rate"] = sr
+
+            yield yield_item
+
     @abstractmethod
     def _id_to_audio_filename(self, dialogue_id):
         """Transform conversation id to valid audio filename.
@@ -307,6 +366,17 @@ class ShuffledIterableDataset(IterableDataset, ABC):
 
         """
         pass
+
+    def __iter__(self):
+        """Dataset Iterable."""
+        if self.mode == "train":
+            for item in self.generate_random_samples():
+                yield item
+        elif self.mode == "valid":
+            for item in self.generate_shift_hold_samples():
+                yield item
+        else:
+            raise ValueError("Unknown mode.")
 
 
 class SwitchboardCorpus(ShuffledIterableDataset):

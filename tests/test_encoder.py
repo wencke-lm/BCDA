@@ -38,14 +38,14 @@ class TestEncoder:
         sample = {k: v[0] for k, v in batch.items()}
         out = encoder(sample)
 
-        assert out.shape == torch.Size([1, 800, 256])
+        assert out.shape == torch.Size([1, 1000, 256])
         assert not out.isnan().any()
 
     def test_encode_with_batch_dim(self, batch):
         encoder = Encoder(hist_bins_dim=5)
         out = encoder(batch)
 
-        assert out.shape == torch.Size([2, 800, 256])
+        assert out.shape == torch.Size([2, 1000, 256])
         assert not out.isnan().any()
 
     def test_encode_same_result_batch_no_batch(self, batch):
