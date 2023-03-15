@@ -70,6 +70,23 @@ class TestShuffledIterableDataset:
         assert sample["va"][1, :95].sum() == 0
         assert sample["va"][1, 96] == 1
 
+    def test_select_samples_input_window_ends_at_prediction(self):
+        swb_path = os.path.join(
+           "tests",
+           "data",
+           "pseudo_switchboard"
+        )
+        swb = SwitchboardCorpus(
+            os.path.join(swb_path, "swb_audios"),
+            os.path.join(swb_path, "swb_ms98_transcriptions"),
+            os.path.join(swb_path, "conversations.split"),
+            sample_rate=12000
+        )
+        sample = next(swb.select_samples(2158, [260.057125]))
+
+        assert sample["va"][0, 799] == 0
+        assert sample["va"][1, 800] == 1
+
     def test_generate_samples_from_split(self):
         swb_path = os.path.join(
            "tests",

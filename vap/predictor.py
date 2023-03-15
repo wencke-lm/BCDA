@@ -126,7 +126,6 @@ class VAPHead(nn.Module):
         self.threshold = threshold
 
         self.n_classes = 2**(2*len(pred_bins) - 2)
-        print(self.n_classes)
         self.projection_head = nn.Linear(
             dim_in, self.n_classes
         )
@@ -261,6 +260,10 @@ class VAPHead(nn.Module):
         prob_no_bc_bc = torch.zeros(
             2, device=raw_pred.device
         )
+        count_states_no_bc_bc = torch.zeros(
+            2, device=raw_pred.device
+        )
+
 
         for i, prob in enumerate(raw_pred):
             bin_conf = decimal_to_binary_tensor(
@@ -304,13 +307,13 @@ class VAPHead(nn.Module):
                         )
                     ):
                         prob_no_bc_bc[1] += prob
+                        count_states_no_bc_bc[1] += 1
                         break
             else:
                 prob_no_bc_bc[0] += prob
+                count_states_no_bc_bc[0] += 1
 
-        print(prob_no_bc_bc)
-
-        return bool(torch.argmax(prob_no_bc_bc))
+        return bool(torch.argmax(prob_no_bc_bc/count_states_no_bc_bc))
 
     def forward(self, x):
         """Feed into voice activity classification head.

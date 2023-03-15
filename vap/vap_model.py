@@ -130,7 +130,9 @@ class VAPModel(pl.LightningModule):
                 pred_batch, event_batch, speaker_batch
             ):
                 pred_next_speaker = (
-                    self.predictor.classification_head.get_next_speaker(pred)
+                    self.predictor.classification_head.get_next_speaker(
+                        torch.nn.functional.softmax(pred, dim=-1)
+                    )
                 )
 
                 if speaker == pred_next_speaker:
