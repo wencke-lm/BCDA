@@ -3,4 +3,5 @@ lightning
 pytest
 pytest-depends==1.0
 pyyaml
+scikit-learn
 soundfile

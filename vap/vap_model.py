@@ -2,7 +2,7 @@
 from collections import Counter
 
 import pytorch_lightning as pl
-from sklearn.metrics import f1_score
+from sklearn.metrics import precision_recall_fscore_support
 import torch
 import torch.nn as nn
 
@@ -42,10 +42,8 @@ class VAPModel(pl.LightningModule):
 
         self.save_hyperparameters()
 
-    def forward(self, x):
-        return self.predictor(self.encoder(x))
-
     def configure_optimizers(self):
+        """Define algorithms and schedulers used in optimization."""
         opt = torch.optim.AdamW(
             self.parameters(),
             lr=self.confg["optimizer"]["learning_rate"],
@@ -65,7 +63,12 @@ class VAPModel(pl.LightningModule):
             },
         }
 
+    def forward(self, x):
+        """Define computation performed at model call."""
+        return self.predictor(self.encoder(x))
+
     def _shared_step(self, batch, batch_idx):
+        """Prepare evaluation & backward pass."""
         labels = self.predictor.classification_head.extract_gold_labels(
             batch["va"]
         ).flatten()
@@ -99,63 +102,55 @@ class VAPModel(pl.LightningModule):
         return loss, labels, out
 
     def training_step(self, batch, batch_idx):
+        """Compute and return training loss."""
         loss, _, _ = self._shared_step(batch, batch_idx)
         self.log("train_loss", loss, on_step=False, on_epoch=True)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
+        """Compute and return validation loss."""
         loss, gold, pred = self._shared_step(batch, batch_idx)
         self.log("val_loss", loss, on_step=False, on_epoch=True)
 
-        return loss, gold, pred[:, -1], batch["event"][0], batch["event"][1]
+        return loss, pred[:, -1], *batch["event"]
 
     def on_train_epoch_start(self):
+        """Call at training time in the very beginning of the epoch."""
         if self.current_epoch == self.confg["optimizer"]["train_encoder_epoch"]:
             self.encoder.set_cpc_mode(freeze=False)
 
-    def validation_epoch_end(self, validation_step_outputs):
-        all_pred = {}
-        true_pred = {}
-
+    def validation_epoch_end(self, validation_step_out):
+        """Call at validation time in the very end of the epoch."""
         true_events = []
         pred_events = []
 
-        for _, gold, pred, event, pre_speaker in validation_step_outputs:
-            for g, p in zip(gold.tolist(), pred.argmax(dim=-1).tolist()):
-                all_pred[p] = all_pred.get(p, 0) + 1
-                if g == p:
-                    true_pred[p] = true_pred.get(p, 0) + 1
-
-            for i in range(pred.shape[0]):
-                e, sp = event[i], pre_speaker[i]
-
+        for _, pred_batch, event_batch, speaker_batch in validation_step_out:
+            for pred, event, speaker in zip(
+                pred_batch, event_batch, speaker_batch
+            ):
                 pred_next_speaker = (
-                    self.predictor.classification_head
-                    .get_next_speaker(pred[i])
+                    self.predictor.classification_head.get_next_speaker(pred)
                 )
 
-                true_events.append(e)
-                if sp == pred_next_speaker:
+                if speaker == pred_next_speaker:
                     pred_events.append("HOLD")
                 else:
                     pred_events.append("SHIFT")
+                true_events.append(event)
 
-        print("\n")
-        for label in all_pred:
-            print(label, all_pred[label], true_pred.get(label), sep="\t")
-        print("\n")
-
-        weights = Counter(true_events)
-        hold_f1, shift_f1 = f1_score(
+        prec, recall, (hold_f1, shift_f1), _ = precision_recall_fscore_support(
             true_events, pred_events, labels=["HOLD", "SHIFT"], average=None
         )
+
+        print("Precision:", prec)
+        print("Recall:", recall)
+
+        weights = Counter(true_events)
         total_f1 = (
             (weights["HOLD"]*hold_f1 + weights["SHIFT"]*shift_f1)/
             sum(weights.values())
         )
-
-        print(hold_f1, shift_f1, total_f1)
 
         self.log("hold_f1", hold_f1)
         self.log("shift_f1", shift_f1)

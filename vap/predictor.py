@@ -9,7 +9,7 @@ from vap.utils import get_activity_history, decimal_to_binary_tensor
 
 
 class StaticPositionEmbedding(nn.Module):
-    """Add information about the position of sequence tokens."""
+    """Add information about the position to sequence tokens."""
     def __init__(self, dim, max_len, dropout):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
@@ -89,7 +89,8 @@ class Transformer(nn.Module):
         seq_len = x.shape[1]
         encoder_mask = (
             torch.triu(
-                torch.ones((seq_len, seq_len), device=x.device), diagonal=1
+                torch.ones((seq_len, seq_len), device=x.device),
+                diagonal=1
             ) == 1
         )
         x = self.transformer(x, mask=encoder_mask)
@@ -124,7 +125,8 @@ class VAPHead(nn.Module):
         self.pred_bins = pred_bins
         self.threshold = threshold
 
-        self.n_classes = 256
+        self.n_classes = 2**(2*len(pred_bins) - 2)
+        print(self.n_classes)
         self.projection_head = nn.Linear(
             dim_in, self.n_classes
         )
@@ -238,6 +240,77 @@ class VAPHead(nn.Module):
                     prob_speakers[active_speaker] += prob
 
         return int(torch.argmax(prob_speakers))
+
+    def is_backchannel(self, raw_pred, speaker=None):
+        """Determine whether a backchannel is upcoming.
+        Args:
+            raw_pred (torch.tensor):
+                (, C_Classes)
+                Unaltered output of the forward pass.
+                Single sample, no batch.
+            speaker (int):
+                Index of the speaker that is considered
+                to currently hold the floor, i.e. had
+                long speeach activity preceding the
+                prediction window.
+        Returns:
+            bool:
+                True, if a backchannel is seen as likely.
+                False else.
+        """
+        prob_no_bc_bc = torch.zeros(
+            2, device=raw_pred.device
+        )
+
+        for i, prob in enumerate(raw_pred):
+            bin_conf = decimal_to_binary_tensor(
+                i, int(math.log2(self.n_classes))
+            )
+            bin_conf_by_speaker = bin_conf.unfold(
+                0, len(self.pred_bins)-1, len(self.pred_bins)-1
+            )
+            active_speaker = speaker
+            total_va = 0
+
+            # va is an array of size equal to number of speakers
+            # starting from their activity at the end of window
+            for i, va in enumerate(
+                bin_conf_by_speaker.permute(1, 0).flip(dims=[0]), 1
+            ):
+                # active speaker should have much activity towards the end
+                if total_va < self.pred_bins[0]*0.4:
+                    if va.sum() == 1:
+                        if (
+                            active_speaker is None
+                            or active_speaker == int(torch.nonzero(va))
+                        ):
+                            active_speaker = int(torch.nonzero(va))
+                            total_va += torch.tensor(
+                                self.pred_bins
+                            ).diff().abs()[-i]
+                            continue
+
+                    # without it, we can no longer consider the config a BC
+                    total_va = -float("inf")
+                # non-active speaker should have short activity towards the start
+                else:
+                    all_speakers = torch.nonzero(va)
+
+                    if (
+                        len(all_speakers) > 1
+                        or (
+                            len(all_speakers) == 1
+                            and active_speaker not in all_speakers
+                        )
+                    ):
+                        prob_no_bc_bc[1] += prob
+                        break
+            else:
+                prob_no_bc_bc[0] += prob
+
+        print(prob_no_bc_bc)
+
+        return bool(torch.argmax(prob_no_bc_bc))
 
     def forward(self, x):
         """Feed into voice activity classification head.

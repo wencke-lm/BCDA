@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
-    LearningRateMonitor,#
+    LearningRateMonitor,
 )
 from torch.utils.data import DataLoader
 import yaml
