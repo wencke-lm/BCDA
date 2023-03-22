@@ -107,7 +107,7 @@ class ShuffledIterableDataset(IterableDataset, ABC):
             "file": audio_file
         }
 
-    def select_samples(self, dialogue_id, time_stamps):
+    def select_samples(self, dialogue_id, time_stamps, test=False):
         """Generate targeted data samples.
 
         Args:
@@ -116,6 +116,9 @@ class ShuffledIterableDataset(IterableDataset, ABC):
             time_stamps (list):
                 Collection of timestamps in seconds, each
                 marking the start of a prediction window.
+            test (bool):
+                Whether the sample is to be used at train
+                or test time.
 
         Yields:
             dict: {
@@ -133,18 +136,31 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         sr = diag["sample_rate"]
 
         for ts in time_stamps:
-            start = ts - (self.sample_len - self.sample_overlap)
+            start = max(ts - (self.sample_len - self.sample_overlap), 0)
             end = ts + self.sample_overlap
 
-            yield {
-                "va": diag["va"]
-                    [:, int(self.n_stride*start):int(self.n_stride*end)],
-                "va_hist": diag["va_hist"]
-                    [:, int(self.n_stride*start):int(self.n_stride*end)],
-                "waveform": diag["waveform"]
-                    [:, int(sr*start):int(sr*end)],
-                "sample_rate": sr
-            }
+            if not test:
+                # yield item including prediction window
+                yield {
+                    "va": diag["va"]
+                        [:, int(self.n_stride*start):int(self.n_stride*end)],
+                    "va_hist": diag["va_hist"]
+                        [:, int(self.n_stride*start):int(self.n_stride*end)],
+                    "waveform": diag["waveform"]
+                        [:, int(sr*start):int(sr*end)],
+                    "sample_rate": sr
+                }
+            else:
+                # yield item including only model input
+                yield {
+                    "va": diag["va"]
+                        [:, int(self.n_stride*start):int(self.n_stride*ts)],
+                    "va_hist": diag["va_hist"]
+                        [:, int(self.n_stride*start):int(self.n_stride*ts)],
+                    "waveform": diag["waveform"]
+                        [:, int(sr*start):int(sr*ts)],
+                    "sample_rate": sr
+                }
 
     def generate_samples(self, load_audio=True):
         """Generate non-shuffled consequtive dialogue samples.
