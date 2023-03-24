@@ -154,11 +154,11 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                 # yield item including only model input
                 yield {
                     "va": diag["va"]
-                        [:, int(self.n_stride*start):int(self.n_stride*ts)],
+                        [:, round(self.n_stride*start):round(self.n_stride*ts)],
                     "va_hist": diag["va_hist"]
-                        [:, int(self.n_stride*start):int(self.n_stride*ts)],
+                        [:, round(self.n_stride*start):round(self.n_stride*ts)],
                     "waveform": diag["waveform"]
-                        [:, int(sr*start):int(sr*ts)],
+                        [:, round(sr*start):round(sr*ts)],
                     "sample_rate": sr
                 }
 

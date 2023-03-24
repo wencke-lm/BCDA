@@ -9,7 +9,7 @@ from vap.utils import load_waveform
 
 @pytest.mark.depends(
     on=[
-        f"tests/test_utils.py::TestLoadWaveform",
+        f"tests/test_vap_utils.py::TestLoadWaveform",
     ]
 )
 class TestCPC:

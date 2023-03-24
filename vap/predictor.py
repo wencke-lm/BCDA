@@ -49,9 +49,11 @@ class Transformer(nn.Module):
 
     """
     def __init__(
-        self, dim, ffn_dim, n_heads, n_layers, activation, dropout, max_len
+        self, dim, ffn_dim, n_heads, n_layers, activation, dropout, max_len,
+        **kwargs
     ):
         super().__init__()
+        self.n_heads = n_heads
 
         self.pos_encoder = StaticPositionEmbedding(
             dim,
@@ -71,7 +73,7 @@ class Transformer(nn.Module):
             n_layers
         )
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         """Feed into causal decoder-only transformer.
 
         Args:
@@ -87,12 +89,24 @@ class Transformer(nn.Module):
 
         # for each token mask all token to its right
         seq_len = x.shape[1]
+        batch_size = x.shape[0]
         encoder_mask = (
             torch.triu(
-                torch.ones((seq_len, seq_len), device=x.device),
+                torch.ones((batch_size, seq_len, seq_len), device=x.device),
                 diagonal=1
             ) == 1
         )
+        if mask is not None:
+            # mask padding tokens
+            encoder_mask = mask.unsqueeze(1) + encoder_mask
+            # padding tokens may attend to themselves to prevent NaN values
+            mask = torch.eye(seq_len).repeat(batch_size, 1, 1).bool()
+            encoder_mask[mask] = False
+            # repeat same mask for each head
+            encoder_mask = torch.repeat_interleave(
+                encoder_mask, self.n_heads, dim=0
+            )
+
         x = self.transformer(x, mask=encoder_mask)
 
         assert not x.isnan().any()

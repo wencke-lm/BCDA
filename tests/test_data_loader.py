@@ -249,7 +249,7 @@ class TestShuffledIterableDataset:
 
 @pytest.mark.depends(
     on=[
-        f"tests/test_utils.py",
+        f"tests/test_vap_utils.py",
     ]
 )
 class TestSwitchboardCorpus:
