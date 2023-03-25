@@ -1,5 +1,6 @@
 """data_loader.py - Datasets & Dataloaders"""
 from abc import ABC, abstractmethod
+from decimal import *
 import os
 import random
 
@@ -154,11 +155,11 @@ class ShuffledIterableDataset(IterableDataset, ABC):
                 # yield item including only model input
                 yield {
                     "va": diag["va"]
-                        [:, round(self.n_stride*start):round(self.n_stride*ts)],
+                        [:, int(self.n_stride*start):int(self.n_stride*ts)],
                     "va_hist": diag["va_hist"]
-                        [:, round(self.n_stride*start):round(self.n_stride*ts)],
+                        [:, int(self.n_stride*start):int(self.n_stride*ts)],
                     "waveform": diag["waveform"]
-                        [:, round(sr*start):round(sr*ts)],
+                        [:, int(sr*start):int(sr*ts)],
                     "sample_rate": sr
                 }
 
@@ -499,7 +500,8 @@ class SwitchboardCorpus(ShuffledIterableDataset):
                     # collect full IPUs
                     # (= speech units preceeded and followed by silence/noise)
                     if word.strip() not in {
-                        "[silence]", "[noise]", "<b_aside>", "<e_aside>"
+                        "[silence]", "[noise]", "[laughter]", "[vocalized-noise]",
+                        "<b_aside>", "<e_aside>"
                     }:
                         if last_start is None:
                             last_start = start

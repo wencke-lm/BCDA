@@ -1,4 +1,6 @@
 """utils.py - Data Preprocessing"""
+from decimal import *
+
 import torch
 
 
@@ -41,7 +43,7 @@ class BCDataset(torch.utils.data.IterableDataset):
         with open(self.filename, "r", encoding=encoding) as file:
             sample = file.readline()
             while sample:
-                info, _, time_stamp, bc_type = sample.rstrip().split("\t")
+                info, time_stamp, bc_type = sample.rstrip().split("\t")
                 diag_id, bc_speaker = info[2:-1], info[-1]
 
                 sample = file.readline()
@@ -83,7 +85,7 @@ class BCDataset(torch.utils.data.IterableDataset):
 
                 if diag_id in self.corpus.split:
                     prev_diag_id = diag_id
-                    time_stamps.append(float(time_stamp))
+                    time_stamps.append(Decimal(time_stamp))
                     add_info.append((bc_speaker, bc_type))
 
         print(time_stamps)

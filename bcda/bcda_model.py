@@ -72,7 +72,7 @@ class BCDAModel(pl.LightningModule):
 
     def _shared_step(self, batch, batch_idx):
         """Prepare evaluation & backward pass."""
-        out = self(batch, batch["masks"])
+        out = self(batch, mask=batch["masks"])
         labels = torch.tensor(
             [self.label_to_idx[l] for l in batch["labels"]],
             device=out.device

@@ -90,13 +90,22 @@ class Transformer(nn.Module):
         # for each token mask all token to its right
         seq_len = x.shape[1]
         batch_size = x.shape[0]
-        encoder_mask = (
-            torch.triu(
-                torch.ones((batch_size, seq_len, seq_len), device=x.device),
-                diagonal=1
-            ) == 1
-        )
-        if mask is not None:
+
+        if mask is None:
+            encoder_mask = (
+                torch.triu(
+                    torch.ones((seq_len, seq_len), device=x.device),
+                    diagonal=1
+                ) == 1
+            )
+        else:
+            # casual attention mask
+            encoder_mask = (
+                torch.triu(
+                    torch.ones((batch_size, seq_len, seq_len), device=x.device),
+                    diagonal=1
+                ) == 1
+            )
             # mask padding tokens
             encoder_mask = mask.unsqueeze(1) + encoder_mask
             # padding tokens may attend to themselves to prevent NaN values
