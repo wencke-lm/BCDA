@@ -1,5 +1,6 @@
 """utils.py - Data Preprocessing"""
 from decimal import *
+import random
 
 import torch
 
@@ -50,6 +51,10 @@ class BCDataset(torch.utils.data.IterableDataset):
 
                 # load all samples belonging to one dialogue together
                 if time_stamps and (prev_diag_id != diag_id or not sample):
+                    # randomize order of samples
+                    merged = list(zip(time_stamps, add_info))
+                    random.shuffle(merged)
+                    time_stamps, add_info = zip(*merged)
                     for i, s in enumerate(
                         self.corpus.select_samples(
                             prev_diag_id, time_stamps, test=True
@@ -87,5 +92,3 @@ class BCDataset(torch.utils.data.IterableDataset):
                     prev_diag_id = diag_id
                     time_stamps.append(Decimal(time_stamp))
                     add_info.append((bc_speaker, bc_type))
-
-        print(time_stamps)
