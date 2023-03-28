@@ -137,8 +137,8 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         sr = diag["sample_rate"]
 
         for ts in time_stamps:
-            start = max(ts - (self.sample_len - self.sample_overlap), 0)
-            end = ts + self.sample_overlap
+            start = max(ts - Decimal(self.sample_len - self.sample_overlap), 0)
+            end = ts + Decimal(self.sample_overlap)
 
             if not test:
                 # yield item including prediction window

@@ -43,6 +43,11 @@ class BCDAModel(pl.LightningModule):
 
         self.load_state_dict(pretrained_model_dict, strict=False)
 
+        for p in self.encoder.parameters():
+            p.requires_grad_(False)
+        for p in self.transformer.parameters():
+            p.requires_grad_(False)
+
     def configure_optimizers(self):
         """Define algorithms and schedulers used in optimization."""
         opt = torch.optim.AdamW(
@@ -51,9 +56,17 @@ class BCDAModel(pl.LightningModule):
             betas=self.confg["optimizer"]["betas"],
             weight_decay=self.confg["optimizer"]["weight_decay"]
         )
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        lr_scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=opt,
             T_max=self.confg["optimizer"]["lr_scheduler_tmax"]
+        )
+        lr_scheduler2 = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer=opt,
+            milestones=[self.confg["optimizer"]["train_transformer_epoch"]],
+            gamma=0.1
+        )
+        lr_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
+            [lr_scheduler1, lr_scheduler2]
         )
         return {
             "optimizer": opt,
@@ -90,6 +103,12 @@ class BCDAModel(pl.LightningModule):
         self.log("train_loss", loss, on_step=False, on_epoch=True)
 
         return loss
+
+    def on_train_epoch_start(self):
+        """Call at train time at the very start of the epoch."""
+        if self.current_epoch == self.confg["optimizer"]["train_transformer_epoch"]:
+            for p in self.parameters():
+                p.requires_grad_(True)
 
     def validation_step(self, batch, batch_idx):
         """Compute and return validation loss."""
