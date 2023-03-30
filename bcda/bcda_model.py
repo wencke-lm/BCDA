@@ -1,6 +1,6 @@
 """bcda_model.py - Supervised backchannel prediction model"""
 import pytorch_lightning as pl
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, f1_score
 import torch
 import torch.nn as nn
 
@@ -56,17 +56,9 @@ class BCDAModel(pl.LightningModule):
             betas=self.confg["optimizer"]["betas"],
             weight_decay=self.confg["optimizer"]["weight_decay"]
         )
-        lr_scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer=opt,
             T_max=self.confg["optimizer"]["lr_scheduler_tmax"]
-        )
-        lr_scheduler2 = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer=opt,
-            milestones=[self.confg["optimizer"]["train_transformer_epoch"]],
-            gamma=0.1
-        )
-        lr_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
-            [lr_scheduler1, lr_scheduler2]
         )
         return {
             "optimizer": opt,
@@ -107,8 +99,9 @@ class BCDAModel(pl.LightningModule):
     def on_train_epoch_start(self):
         """Call at train time at the very start of the epoch."""
         if self.current_epoch == self.confg["optimizer"]["train_transformer_epoch"]:
-            for p in self.parameters():
-                p.requires_grad_(True)
+            for name, p in self.named_parameters():
+                if not name.startswith("encoder.wave_encoder"):
+                    p.requires_grad_(True)
 
     def validation_step(self, batch, batch_idx):
         """Compute and return validation loss."""
@@ -128,8 +121,16 @@ class BCDAModel(pl.LightningModule):
 
         conf_mtrx = confusion_matrix(
             # ["NO-BC", "CONTINUER", "ASSESSMENT"]
-            gold, pred, labels= [0, 1, 2]
+            gold, pred, labels=[0, 1, 2]
         )
         print(conf_mtrx)
+        with open("output.txt", "a") as file_out:
+            file_out.write(str(self.current_epoch))
+            file_out.write("\n")
+            file_out.write(str(conf_mtrx))
+            file_out.write("\n")
+
+        f1 = f1_score(gold, pred, average="weighted")
+        self.log("f1", f1)
 
         return conf_mtrx

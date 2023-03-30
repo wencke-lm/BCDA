@@ -31,7 +31,7 @@ class BCDataset(torch.utils.data.IterableDataset):
         """Load backchannel samples.
 
         Yields:
-            tuple: (Input Features, BC Speaker, BC Type).
+            tuple: (Input Features, BC Speaker, BC Type, BC Context).
 
         """
         prev_diag_id = None
@@ -42,12 +42,13 @@ class BCDataset(torch.utils.data.IterableDataset):
         wave_mask = None
 
         with open(self.filename, "r", encoding=encoding) as file:
-            sample = file.readline()
+            sample = True
             while sample:
-                info, time_stamp, bc_type = sample.rstrip().split("\t")
-                diag_id, bc_speaker = info[2:-1], info[-1]
-
                 sample = file.readline()
+
+                if sample:
+                    info, time_stamp, bc_type, *contxt = sample.rstrip().split("\t")
+                    diag_id, bc_speaker = info[2:-1], info[-1]
 
                 # load all samples belonging to one dialogue together
                 if time_stamps and (prev_diag_id != diag_id or not sample):
@@ -64,7 +65,8 @@ class BCDataset(torch.utils.data.IterableDataset):
                             va_mask = torch.zeros(s["va"].shape[-1])
                             wave_mask = torch.zeros(s["waveform"].shape[-1])
 
-                        s["speakers"], s["labels"] = add_info[i]
+                        s["speakers"], s["labels"], s["context"] = add_info[i]
+
                         # generate padding mask
                         s["masks"] = va_mask == 0
                         s["masks"][-s["va"].shape[-1]:] = False
@@ -91,4 +93,4 @@ class BCDataset(torch.utils.data.IterableDataset):
                 if diag_id in self.corpus.split:
                     prev_diag_id = diag_id
                     time_stamps.append(Decimal(time_stamp))
-                    add_info.append((bc_speaker, bc_type))
+                    add_info.append((bc_speaker, bc_type, contxt))

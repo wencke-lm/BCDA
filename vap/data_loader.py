@@ -500,7 +500,7 @@ class SwitchboardCorpus(ShuffledIterableDataset):
                     # collect full IPUs
                     # (= speech units preceeded and followed by silence/noise)
                     if word.strip() not in {
-                        "[silence]", "[noise]", "[laughter]", "[vocalized-noise]",
+                        "[silence]", "[noise]",
                         "<b_aside>", "<e_aside>"
                     }:
                         if last_start is None:

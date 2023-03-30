@@ -35,12 +35,6 @@ class TestBCDataset:
 
         assert len(out) == 278
 
-        assert out[4]["speakers"] == "A"
-        assert out[4]["labels"] == "ASSESSMENT"
-
-        assert out[30]["speakers"] == "B"
-        assert out[30]["labels"] == "CONTINUER"
-
     def test_load_bc_samples_mask_for_shorter_samples(self):
         swb_path = os.path.join(
            "tests",

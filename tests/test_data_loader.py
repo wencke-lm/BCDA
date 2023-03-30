@@ -1,3 +1,4 @@
+from decimal import *
 import os
 import random
 from unittest.mock import patch
@@ -53,7 +54,7 @@ class TestShuffledIterableDataset:
             os.path.join(swb_path, "conversations.split"),
             sample_rate=12000
         )
-        sample = next(swb.select_samples(2158, [9.0]))
+        sample = next(swb.select_samples(2158, [Decimal("9.0")]))
 
         torch.testing.assert_close(
             sample["va"].shape, torch.Size([2, 1000])
@@ -82,7 +83,7 @@ class TestShuffledIterableDataset:
             os.path.join(swb_path, "conversations.split"),
             sample_rate=12000
         )
-        sample = next(swb.select_samples(2158, [260.057125]))
+        sample = next(swb.select_samples(2158, [Decimal("260.057125")]))
 
         assert sample["va"][0, 799] == 0
         assert sample["va"][1, 800] == 1
@@ -279,7 +280,11 @@ class TestSwitchboardCorpus:
                     if skip:
                         continue
 
-                    if word.strip() not in {"[silence]", "[noise]"}:
+
+
+                    if word.strip() not in {
+                        "[silence]", "[noise]"
+                    }:
                         va[i].append([float(start), float(end)])
 
         return va

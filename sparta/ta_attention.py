@@ -86,4 +86,4 @@ class TimeAwareAttention(nn.Module):
         x = torch.matmul(relevance.unsqueeze(0), value)
         # x.shape (h_dim, )
 
-        return x, relevance
+        return x  #, relevance
