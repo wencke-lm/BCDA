@@ -17,7 +17,7 @@ from bcda.bcda_model import BCDAModel
 from bcda.utils import BCDataset
 
 
-BC_DATA = os.path.join("data", "swb", "utterance_is_backchannel.csv")
+BC_DATA = os.path.join("data", "swb", "utterance_is_backchannel_with_context.csv")
 
 
 def train(cfg_dict, init_state, ckpt_load, ckpt_save):
@@ -48,13 +48,13 @@ def train(cfg_dict, init_state, ckpt_load, ckpt_save):
         split_info=split_info["train_split"], **cfg_dict["data"]
     )
     train_dataset = BCDataset(train_swb, BC_DATA)
-    train_data = DataLoader(train_dataset, batch_size=32)
+    train_data = DataLoader(train_dataset, batch_size=8)
 
     valid_swb = SwitchboardCorpus(
         split_info=split_info["valid_split"], **cfg_dict["data"]
     )
     valid_dataset = BCDataset(valid_swb, BC_DATA)
-    valid_data = DataLoader(valid_dataset, batch_size=32)
+    valid_data = DataLoader(valid_dataset, batch_size=8)
 
     # prepare model
     print("Build model ...")

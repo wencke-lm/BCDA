@@ -53,25 +53,33 @@ class TimeAwareAttention(nn.Module):
                 Contextualized embedding and utterance relevance.
 
         """
-        window_size = memory.shape[0]
+        if len(memory.shape) == 2:
+            # add batch dimension
+            current_utterance.unsqueeze_(0)
+            memory.unsqueeze_(0)
+
+        window_size = memory.shape[1]
 
         key = self.k(memory)
         value = self.v(memory)
         query = self.q(current_utterance)
 
         # compute similarity function between utterances
-        similarity = torch.cosine_similarity(key, query)
-        # similarity.shape = (window_size,)
+        similarity = torch.cosine_similarity(key, query, dim=-1)
+        # similarity.shape = ((batch_size,) window_size,)
 
         # get the time-aware distance weights
         weights = 1/torch.exp(
-            torch.linspace(1, window_size, window_size)
+            torch.linspace(
+                1, window_size, window_size,
+                device=similarity.device
+            )
         )**t
         # weights.shape = (window_size,)
         
         # weigh contribution per utterance
         similarity = similarity*weights
-        # similarity.shape (window_size,)
+        # similarity.shape ((batch_size,) window_size,)
 
         # mask the not useful context
         if attention_mask is not None:
@@ -81,9 +89,10 @@ class TimeAwareAttention(nn.Module):
 
         # compute proportional relevance per utterance
         relevance = similarity.softmax(dim=-1)
+        # relevance.shape ((batch_size,) window_size,)
 
         # get relevance based contextual embedding
-        x = torch.matmul(relevance.unsqueeze(0), value)
-        # x.shape (h_dim, )
+        x = torch.einsum('bj,bjk->bk', relevance, value)
+        # x.shape ((batch_size,) h_dim)
 
-        return x  #, relevance
+        return x, relevance

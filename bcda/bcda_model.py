@@ -4,18 +4,33 @@ from sklearn.metrics import confusion_matrix, f1_score
 import torch
 import torch.nn as nn
 
+from sparta.sparta import SpartaModel
 from vap.encoder import Encoder
 from vap.predictor import Transformer
 from vap.vap_model import VAPModel
 
 
 class BCDAModel(pl.LightningModule):
-    def __init__(self, confg, encoder_confg, predictor_confg):
+    def __init__(
+        self,
+        confg,
+        encoder_confg,
+        predictor_confg,
+        use_audio=True,
+        use_text=True
+    ):
         super().__init__()
 
         self.confg = confg
+        self.use_audio = use_audio
+        self.use_text = use_text
+
+        self.feat_emb_dim = predictor_confg["dim"]
+        # audio feature processing
         self.encoder = Encoder(**encoder_confg)
         self.transformer = Transformer(**predictor_confg)
+        # text feature processing
+        self.text_encoder = SpartaModel(self.feat_emb_dim)
 
         self.classification_head = nn.Linear(
             predictor_confg["dim"], 3
@@ -25,6 +40,9 @@ class BCDAModel(pl.LightningModule):
             "CONTINUER": 1,
             "ASSESSMENT": 2
         }
+
+        for n, p in self.named_parameters():
+            print(n, p.requires_grad)
 
         self.save_hyperparameters()
 
@@ -56,10 +74,17 @@ class BCDAModel(pl.LightningModule):
             betas=self.confg["optimizer"]["betas"],
             weight_decay=self.confg["optimizer"]["weight_decay"]
         )
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer=opt,
-            T_max=self.confg["optimizer"]["lr_scheduler_tmax"]
-        )
+        if self.confg["optimizer"]["train_transformer_epoch"] != -1:
+            lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                optimizer=opt,
+                milestones=[self.confg["optimizer"]["train_transformer_epoch"]],
+                gamma=0.1
+            )
+        else:
+            lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer=opt,
+                T_max=self.confg["optimizer"]["lr_scheduler_tmax"]
+            )
         return {
             "optimizer": opt,
             "lr_scheduler": {
@@ -69,15 +94,34 @@ class BCDAModel(pl.LightningModule):
             },
         }
 
-    def forward(self, x, mask=None):
+    def forward(self, x):
         """Define computation performed at model call."""
-        return self.classification_head(
-            self.transformer(self.encoder(x), mask=mask)[:, -1]
-        )
+
+        if self.use_audio:
+            audio_emb = self.transformer(
+                self.encoder(x),
+                mask=x["masks"]
+            )[:, -1]
+
+            if not self.use_text:
+                feat_emb = self.classification_head(audio_emb)
+
+        if self.use_text:
+            text_emb = self.text_encoder(
+                x["text_input_ids"],
+                x["text_attention_mask"]
+            )
+            if not self.use_audio:
+                feat_emb = self.classification_head(text_emb)
+
+        if self.use_audio and self.use_text:
+            feat_emb = torch.maximum(audio_emb, text_emb)
+
+        return self.classification_head(feat_emb)
 
     def _shared_step(self, batch, batch_idx):
         """Prepare evaluation & backward pass."""
-        out = self(batch, mask=batch["masks"])
+        out = self(batch)
         labels = torch.tensor(
             [self.label_to_idx[l] for l in batch["labels"]],
             device=out.device
@@ -100,8 +144,17 @@ class BCDAModel(pl.LightningModule):
         """Call at train time at the very start of the epoch."""
         if self.current_epoch == self.confg["optimizer"]["train_transformer_epoch"]:
             for name, p in self.named_parameters():
-                if not name.startswith("encoder.wave_encoder"):
+                if name.startswith("transformer") or name.startswith("encoder.va"):
                     p.requires_grad_(True)
+
+        if self.current_epoch == self.confg["optimizer"]["train_llm_epoch"]:
+            for name, p in self.named_parameters():
+                if name.startswith("text_encoder.model"):
+                    p.requires_grad_(True)
+
+        for n, p in self.named_parameters():
+            print(n, p.requires_grad)
+
 
     def validation_step(self, batch, batch_idx):
         """Compute and return validation loss."""
@@ -124,11 +177,6 @@ class BCDAModel(pl.LightningModule):
             gold, pred, labels=[0, 1, 2]
         )
         print(conf_mtrx)
-        with open("output.txt", "a") as file_out:
-            file_out.write(str(self.current_epoch))
-            file_out.write("\n")
-            file_out.write(str(conf_mtrx))
-            file_out.write("\n")
 
         f1 = f1_score(gold, pred, average="weighted")
         self.log("f1", f1)
