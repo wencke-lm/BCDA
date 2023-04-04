@@ -15,22 +15,20 @@ class BCDAModel(pl.LightningModule):
         self,
         confg,
         encoder_confg,
-        predictor_confg,
-        use_audio=True,
-        use_text=True
+        predictor_confg
     ):
         super().__init__()
 
         self.confg = confg
-        self.use_audio = use_audio
-        self.use_text = use_text
 
         self.feat_emb_dim = predictor_confg["dim"]
         # audio feature processing
-        self.encoder = Encoder(**encoder_confg)
-        self.transformer = Transformer(**predictor_confg)
+        if self.confg["use_audio"]:
+            self.encoder = Encoder(**encoder_confg)
+            self.transformer = Transformer(**predictor_confg)
         # text feature processing
-        self.text_encoder = SpartaModel(self.feat_emb_dim)
+        if self.confg["use_text"]:
+            self.text_encoder = SpartaModel(self.feat_emb_dim)
 
         self.classification_head = nn.Linear(
             predictor_confg["dim"], 3
@@ -96,25 +94,26 @@ class BCDAModel(pl.LightningModule):
 
     def forward(self, x):
         """Define computation performed at model call."""
+        # add batch dimension if missing
 
-        if self.use_audio:
+        if self.confg["use_audio"]:
             audio_emb = self.transformer(
                 self.encoder(x),
                 mask=x["masks"]
             )[:, -1]
 
-            if not self.use_text:
-                feat_emb = self.classification_head(audio_emb)
+            if not self.confg["use_text"]:
+                feat_emb = audio_emb
 
-        if self.use_text:
+        if self.confg["use_text"]:
             text_emb = self.text_encoder(
                 x["text_input_ids"],
                 x["text_attention_mask"]
             )
-            if not self.use_audio:
-                feat_emb = self.classification_head(text_emb)
+            if not self.confg["use_audio"]:
+                feat_emb = text_emb
 
-        if self.use_audio and self.use_text:
+        if self.confg["use_audio"] and self.confg["use_text"]:
             feat_emb = torch.maximum(audio_emb, text_emb)
 
         return self.classification_head(feat_emb)
@@ -151,10 +150,6 @@ class BCDAModel(pl.LightningModule):
             for name, p in self.named_parameters():
                 if name.startswith("text_encoder.model"):
                     p.requires_grad_(True)
-
-        for n, p in self.named_parameters():
-            print(n, p.requires_grad)
-
 
     def validation_step(self, batch, batch_idx):
         """Compute and return validation loss."""

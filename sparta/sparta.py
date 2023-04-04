@@ -24,6 +24,11 @@ class SpartaModel(nn.Module):
         self.ta_attention = TimeAwareAttention(768, 768)
 
     def forward(self, input_ids, attention_mask):
+        if len(input_ids.shape) < 3:
+            input_ids = input_ids.unsqueeze(0)
+        if len(attention_mask.shape) < 3:
+            attention_mask = attention_mask.unsqueeze(0)
+
         batch_size, hist_len, _ = input_ids.shape
 
         out = self.model(

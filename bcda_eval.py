@@ -1,4 +1,4 @@
-"""vap_eval.py - Interface to test voice activity projection model"""
+"""bcda_eval.py - Interface to test BC prediction model"""
 import argparse
 import sys
 import yaml
@@ -7,7 +7,7 @@ from sklearn.metrics import confusion_matrix, f1_score
 import torch
 
 from vap.data_loader import SwitchboardCorpus
-from vap.vap_model import VAPModel
+from bcda.bcda_model import BCDAModel
 from bcda.utils import BCDataset
 
 
@@ -24,7 +24,7 @@ def test(cfg_dict, model_state, test_file):
 
     # prepare model
     print("Build model ...")
-    model = VAPModel.load_from_checkpoint(model_state)
+    model = BCDAModel.load_from_checkpoint(model_state)
     model.freeze()
     print("COMPLETE")
 
@@ -38,34 +38,33 @@ def test(cfg_dict, model_state, test_file):
         if i%100 == 0:
             print(i)
 
-        outpt = torch.nn.functional.softmax(model(x)[0, -1], dim=0)
+        outpt = int(torch.argmax(model(x), dim=1))
 
-        # the BC should be uttered by the not active speaker
-        is_bc = model.predictor.classification_head.is_backchannel(
-            outpt, {"A": 1, "B": 0}[x["speakers"]]
-        )
-        true.append(x["labels"] != "NO-BC")
-        pred.append(is_bc)
+        true.append(model.label_to_idx[x["labels"]])
+        pred.append(outpt)
 
-    conf_mtrx = confusion_matrix(true, pred, labels=[False, True])
+    conf_mtrx = confusion_matrix(true, pred, labels=[0, 1, 2])
 
     # print confusion matrix
     print(f"{'':25}{'Prediction':^40}")
-    print(f"{'':25}{'NO-BC':^20}{'BC':^20}")
+    print(f"{'':25}{'NO-BC':^20}{'CONTINUER':^20}{'ASSESSMENT':^20}")
     print(f"{'Gold':<5}{'NO-BC':>20}", end="")
-    print(f"{conf_mtrx[0, 0]:^20}{conf_mtrx[0, 1]:^20}")
-    print(f"{'':<5}{'BC':>20}", end="")
-    print(f"{conf_mtrx[1, 0]:^20}{conf_mtrx[1, 1]:^20}")
+    print(f"{conf_mtrx[0, 0]:^20}{conf_mtrx[0, 1]:^20}{conf_mtrx[0, 2]:^20}")
+    print(f"{'':<5}{'CONTINUER':>20}", end="")
+    print(f"{conf_mtrx[1, 0]:^20}{conf_mtrx[1, 1]:^20}{conf_mtrx[1, 2]:^20}")
+    print(f"{'':<5}{'ASSESSMENT':>20}", end="")
+    print(f"{conf_mtrx[2, 0]:^20}{conf_mtrx[2, 1]:^20}{conf_mtrx[2, 2]:^20}")
 
-    f1_no_bc, f1_bc = f1_score(
-        true, pred, average=None, labels=[False, True]
+    f1_no_bc, f1_cont, f1_ass =  f1_score(
+        true, pred, average=None, labels=[0, 1, 2]
     )
     weighted_f1 = f1_score(
-        true, pred, average="weighted", labels=[False, True]
+        true, pred, average="weighted", labels=[0, 1, 2]
     )
 
     print("NO-BC F1:", f1_no_bc)
-    print("BC F1:", f1_bc)
+    print("CONTINUER F1:", f1_cont)
+    print("ASSESSMENT F1:", f1_ass)
     print("=> Weighted F1:", weighted_f1)
 
 
@@ -85,7 +84,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data", metavar="DATA_PATH",
-        default="data/swb/utterance_is_backchannel.csv",
+        default="data/swb/utterance_is_backchannel_with_context.csv",
         help="path to plain BC record for testing"
     )
 
