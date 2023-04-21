@@ -28,7 +28,11 @@ class BCDAModel(pl.LightningModule):
             self.transformer = Transformer(**predictor_confg)
         # text feature processing
         if self.confg["use_text"]:
-            self.text_encoder = SpartaModel(self.feat_emb_dim)
+            self.text_encoder = SpartaModel(
+                self.feat_emb_dim,
+                self.confg["bert_dropout"],
+                self.confg["hist_n"]
+            )
 
         self.classification_head = nn.Linear(
             predictor_confg["dim"], 3
@@ -72,23 +76,27 @@ class BCDAModel(pl.LightningModule):
             betas=self.confg["optimizer"]["betas"],
             weight_decay=self.confg["optimizer"]["weight_decay"]
         )
-        if self.confg["optimizer"]["train_transformer_epoch"] != -1:
-            lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                optimizer=opt,
-                milestones=[self.confg["optimizer"]["train_transformer_epoch"]],
-                gamma=0.1
-            )
-        else:
-            lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer=opt,
-                T_max=self.confg["optimizer"]["lr_scheduler_tmax"]
-            )
+        # if self.confg["optimizer"]["train_transformer_epoch"] != -1:
+        #    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        #        optimizer=opt,
+        #        milestones=[self.confg["optimizer"]["train_transformer_epoch"]],
+        #        gamma=0.1
+        #    )
+        #else:
+        #    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #        optimizer=opt,
+        #        T_max=self.confg["optimizer"]["lr_scheduler_tmax"]
+        #    )
+        warm_up = torch.optim.lr_scheduler.LinearLR(opt, start_factor=0.1, end_factor=1, total_iters=6280)
+        cool_down = torch.optim.lr_scheduler.LinearLR(opt, start_factor=1.0, end_factor=0.1, total_iters=307720)
+        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(opt, schedulers=[warm_up, cool_down], milestones=[6280])
+        
         return {
             "optimizer": opt,
             "lr_scheduler": {
                 "scheduler": lr_scheduler,
-                "interval": self.confg["optimizer"]["lr_scheduler_interval"],
-                "frequency": self.confg["optimizer"]["lr_scheduler_freq"]
+                "interval": "step", # self.confg["optimizer"]["lr_scheduler_interval"],
+                "frequency": 1 # self.confg["optimizer"]["lr_scheduler_freq"]
             },
         }
 
@@ -127,7 +135,7 @@ class BCDAModel(pl.LightningModule):
         )
 
         loss = nn.functional.cross_entropy(
-            out, labels
+            out, labels, weight=torch.tensor([0.85, 1.125, 1.025], device=out.device)
         )
 
         return loss, labels, out
@@ -150,6 +158,7 @@ class BCDAModel(pl.LightningModule):
             for name, p in self.named_parameters():
                 if name.startswith("text_encoder.model"):
                     p.requires_grad_(True)
+                    print(name, p.requires_grad)
 
     def validation_step(self, batch, batch_idx):
         """Compute and return validation loss."""

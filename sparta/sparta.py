@@ -1,21 +1,26 @@
 import torch.nn as nn
-from transformers import DistilBertTokenizer, DistilBertModel
+from transformers import BertTokenizer, BertModel
 
 from sparta.ta_attention import TimeAwareAttention
 
 
 class SpartaModel(nn.Module):
-    tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
     # add special tokens for speaker embedding
     tokenizer.add_special_tokens(
-        {'additional_special_tokens': ["[A]", "[B]"]}
+        {'additional_special_tokens': ["[S]", "[L]"]}
     )
 
-    def __init__(self, dim_out):
+    def __init__(self, dim_out, dropout, hist_n):
         super().__init__()
 
+        self.hist_n = hist_n
         # large pretrained language model
-        self.model = DistilBertModel.from_pretrained("distilbert-base-uncased")
+        self.model = BertModel.from_pretrained(
+                "bert-base-uncased",
+                hidden_dropout_prob=0.3,
+                attention_probs_dropout_prob=0.3
+        )
         self.model.resize_token_embeddings(len(self.tokenizer))
         self.set_llm_mode(True)
         # feature space projection layer
@@ -42,7 +47,7 @@ class SpartaModel(nn.Module):
 
         hist = cls_embedding.unflatten(0, (batch_size, hist_len))
         # hist.shape (batch_size, hist_len, 768)
-        context_emb, _ = self.ta_attention(hist[:, :1], hist)
+        context_emb, _ = self.ta_attention(hist[:, :1], hist[:, :self.hist_n])
         # context_emb.shape (batch_size, 768)
         reduced_context_emb = self.fc(context_emb)
         # reduced_context_emb.shape (batch_size, 256)
@@ -58,7 +63,7 @@ class SpartaModel(nn.Module):
                 parameters during end-to-end training.
 
         """
-        for p in self.model.parameters():
+        for name, p in self.model.named_parameters():
             p.requires_grad_(not freeze)
 
     @classmethod

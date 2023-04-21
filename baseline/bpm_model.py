@@ -119,10 +119,10 @@ class BPM_MT(pl.LightningModule):
             device=main_output.device
         )
         main_loss, sub_loss = (
-            (1-0.1)*main_criterion(main_output, main_labels)
-            , 0.1*sub_criterion(sub_output, batch["sub_labels"])
+            main_criterion(main_output, main_labels)
+            , sub_criterion(sub_output, batch["sub_labels"])
         )
-        total_loss = main_loss + sub_loss
+        total_loss = (1-0.1)*main_loss + 0.1*sub_loss
 
         transf_opt, other_opt = self.optimizers()
         
@@ -136,7 +136,7 @@ class BPM_MT(pl.LightningModule):
         # record loss values
         self.log("main_loss", main_loss, on_step=False, on_epoch=True)
         self.log("sub_loss", sub_loss, on_step=False, on_epoch=True)
-        self.log("total_loss", total_loss, on_step=False, on_epoch=True)
+        self.log("total_loss", total_loss, progbar=True)
 
         return total_loss
 
@@ -196,7 +196,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    path = os.path.dirname(os.path.dirname(__file__))
+    print(__file__)
+    path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    print(path)
 
     # prepare data
     print("Load data ...")
@@ -227,7 +229,7 @@ if __name__ == "__main__":
     # configure training procedure
     callbacks = [
         ModelCheckpoint(
-            monitor="val_loss",
+            monitor="f1",
             mode="max",
             dirpath=os.path.join(
                 path, "data", "model_checkpoints"
@@ -235,7 +237,7 @@ if __name__ == "__main__":
             filename=args.save + "-{epoch}-{step}"
         ),
         EarlyStopping(
-            monitor="val_loss",
+            monitor="f1",
             mode="max",
             patience=5,
             strict=True,

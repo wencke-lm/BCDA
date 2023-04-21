@@ -49,6 +49,7 @@ class BCDataset(torch.utils.data.IterableDataset):
         super().__init__()
 
         # data sources
+        print(split_info)
         if isinstance(split_info, str):
             with open(split_info, 'r', encoding="utf-8") as data:
                 self.split_info = data.read().strip().split("\n")
@@ -134,7 +135,7 @@ class BCDataset(torch.utils.data.IterableDataset):
         sent_feat = torch.tensor(
             [float(neg_sent), float(neut_sent), float(pos_sent)]
         )
-        text_feat = self.tokenize(hist[0])
+        text_feat = self.tokenize(hist[0][4:])
         audio_feat = self.get_mfcc_feature(
             os.path.join(self.audio_path, f"sw0{diag_id}.sph"),
             float(time_stamp)
