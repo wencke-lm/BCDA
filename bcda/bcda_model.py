@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 from sklearn.metrics import confusion_matrix, f1_score
 import torch
 import torch.nn as nn
+from transformers import get_linear_schedule_with_warmup
 
 from sparta.sparta import SpartaModel
 from vap.encoder import Encoder
@@ -21,21 +22,22 @@ class BCDAModel(pl.LightningModule):
 
         self.confg = confg
 
-        self.feat_emb_dim = predictor_confg["dim"]
+        feat_n = 0
         # audio feature processing
         if self.confg["use_audio"]:
             self.encoder = Encoder(**encoder_confg)
             self.transformer = Transformer(**predictor_confg)
+            feat_n += predictor_confg["dim"]
         # text feature processing
         if self.confg["use_text"]:
             self.text_encoder = SpartaModel(
-                self.feat_emb_dim,
                 self.confg["bert_dropout"],
                 self.confg["hist_n"]
             )
+            feat_n += 768
 
         self.classification_head = nn.Linear(
-            predictor_confg["dim"], 3
+            feat_n, 3
         )
         self.label_to_idx = {
             "NO-BC": 0,
@@ -47,6 +49,8 @@ class BCDAModel(pl.LightningModule):
             print(n, p.requires_grad)
 
         self.save_hyperparameters()
+        # this property activates manual optimization.
+        self.automatic_optimization = False
 
     def load_pretrained_vap(self, model_state):
         """Load self-supervised Voice Activity Projection model."""
@@ -70,35 +74,40 @@ class BCDAModel(pl.LightningModule):
 
     def configure_optimizers(self):
         """Define algorithms and schedulers used in optimization."""
-        opt = torch.optim.AdamW(
-            self.parameters(),
+        transf_opt = torch.optim.AdamW([
+                *self.encoder.parameters(),
+                *self.transformer.parameters(),
+                *self.text_encoder.model.parameters()
+            ],
+            lr=0.0001,
+            betas=self.confg["optimizer"]["betas"],
+            weight_decay=self.confg["optimizer"]["weight_decay"]
+        )
+        other_opt = torch.optim.AdamW([
+                *self.classification_head.parameters(),
+                *self.text_encoder.ta_attention.parameters()
+            ],
             lr=self.confg["optimizer"]["learning_rate"],
             betas=self.confg["optimizer"]["betas"],
             weight_decay=self.confg["optimizer"]["weight_decay"]
         )
-        # if self.confg["optimizer"]["train_transformer_epoch"] != -1:
-        #    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        #        optimizer=opt,
-        #        milestones=[self.confg["optimizer"]["train_transformer_epoch"]],
-        #        gamma=0.1
-        #    )
-        #else:
-        #    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        #        optimizer=opt,
-        #        T_max=self.confg["optimizer"]["lr_scheduler_tmax"]
-        #    )
-        warm_up = torch.optim.lr_scheduler.LinearLR(opt, start_factor=0.1, end_factor=1, total_iters=6280)
-        cool_down = torch.optim.lr_scheduler.LinearLR(opt, start_factor=1.0, end_factor=0.1, total_iters=307720)
-        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(opt, schedulers=[warm_up, cool_down], milestones=[6280])
-        
-        return {
-            "optimizer": opt,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "step", # self.confg["optimizer"]["lr_scheduler_interval"],
-                "frequency": 1 # self.confg["optimizer"]["lr_scheduler_freq"]
-            },
-        }
+
+        it_per_epoch = 28
+        freq = self.confg["optimizer"]["lr_scheduler_freq"]
+
+        transf_lr = get_linear_schedule_with_warmup(
+            optimizer=transf_opt,
+            num_warmup_steps=10*it_per_epoch/freq,
+            num_training_steps=20*it_per_epoch/freq
+        )
+        other_lr = torch.optim.lr_scheduler.LinearLR(
+            optimizer=other_opt,
+            start_factor=1.0,
+            end_factor=0.0,
+            total_iters=20*it_per_epoch/freq
+        )
+
+        return [transf_opt, other_opt], [transf_lr, other_lr]
 
     def forward(self, x):
         """Define computation performed at model call."""
@@ -122,7 +131,7 @@ class BCDAModel(pl.LightningModule):
                 feat_emb = text_emb
 
         if self.confg["use_audio"] and self.confg["use_text"]:
-            feat_emb = torch.maximum(audio_emb, text_emb)
+            feat_emb = torch.cat((audio_emb, text_emb), 1)
 
         return self.classification_head(feat_emb)
 
@@ -144,6 +153,18 @@ class BCDAModel(pl.LightningModule):
         """Compute and return training loss."""
         loss, _, _ = self._shared_step(batch, batch_idx)
         self.log("train_loss", loss, on_step=False, on_epoch=True)
+
+        transf_opt, other_opt = self.optimizers()
+        transf_lr, other_lr = self.lr_schedulers()
+
+        # optimize through back pass
+        transf_opt.zero_grad()
+        other_opt.zero_grad()
+        self.manual_backward(loss)
+        transf_opt.step()
+        other_opt.step()
+        transf_lr.step()
+        other_lr.step()
 
         return loss
 

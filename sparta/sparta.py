@@ -11,7 +11,7 @@ class SpartaModel(nn.Module):
         {'additional_special_tokens': ["[S]", "[L]"]}
     )
 
-    def __init__(self, dim_out, dropout, hist_n):
+    def __init__(self, dropout, hist_n):
         super().__init__()
 
         self.hist_n = hist_n
@@ -23,8 +23,6 @@ class SpartaModel(nn.Module):
         )
         self.model.resize_token_embeddings(len(self.tokenizer))
         self.set_llm_mode(True)
-        # feature space projection layer
-        self.fc = nn.Linear(768, dim_out)
 
         self.ta_attention = TimeAwareAttention(768, 768)
 
@@ -49,10 +47,8 @@ class SpartaModel(nn.Module):
         # hist.shape (batch_size, hist_len, 768)
         context_emb, _ = self.ta_attention(hist[:, :1], hist[:, :self.hist_n])
         # context_emb.shape (batch_size, 768)
-        reduced_context_emb = self.fc(context_emb)
-        # reduced_context_emb.shape (batch_size, 256)
 
-        return reduced_context_emb
+        return context_emb
 
     def set_llm_mode(self, freeze):
         """Freeze or unfreeze language model parameters.

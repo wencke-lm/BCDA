@@ -45,17 +45,23 @@ predictor:
 
 trainer:
   deterministic: true
-  max_epochs: 100
+  max_epochs: 20
   accelerator: 'gpu'
 
 training:
+  use_audio: true
+  use_text: true
+
+  bert_dropout: 0.3
+  hist_n: 3
+
   optimizer:
     learning_rate: 0.0001
     betas:
       - 0.9
       - 0.999
     weight_decay: 0.001
-    lr_scheduler_interval: 'epoch'
+    lr_scheduler_interval: 'step'
     lr_scheduler_freq: 1
     lr_scheduler_tmax: 2500
     train_encoder_epoch: -1
@@ -63,7 +69,7 @@ training:
     train_llm_epoch: 0
 
   early_stopping:
-    patience: 10
+    patience: 20
     monitor: 'f1'
     mode: 'max'
 
