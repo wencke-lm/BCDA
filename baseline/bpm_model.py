@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 from bpm_utils import BCDataset
 
 
-LSTM_DIM = 100 #TODO: find the appropriate size
+LSTM_DIM = 128 #TODO: find the appropriate size
 
 
 class BPM_MT(pl.LightningModule):
@@ -72,6 +72,12 @@ class BPM_MT(pl.LightningModule):
         train=False
     ):
         """Define computation performed at model call."""
+        if len(text_input_ids.shape) < 3:
+            text_input_ids = text_input_ids.unsqueeze(0)
+            text_attention_mask = text_attention_mask.unsqueeze(0)
+        if len(acoustic_input.shape) < 3:
+            acoustic_input = acoustic_input.unsqueeze(0)
+
         lm_output = self.lm(
             input_ids=text_input_ids, attention_mask=text_attention_mask
         )[0]
@@ -92,7 +98,7 @@ class BPM_MT(pl.LightningModule):
         # feed into fully connected FC128 layer with final softmax normalisation
         # outputing a probability distribution across the 4 BC categories
         hidden_emb = relu(self.fc1(combined_encoding))
-        main_output = torch.softmax(self.fc2(hidden_emb), 1)
+        main_output = torch.log_softmax(self.fc2(hidden_emb), 1)
 
         ## Sub-Task
 
@@ -100,14 +106,14 @@ class BPM_MT(pl.LightningModule):
         if train:
             hidden_emb = relu(self.fc3(cls_token_encoding))
             # predicted normalized match count per sentiment category
-            sub_output = torch.sigmoid(self.fc4(hidden_emb))
+            sub_output = torch.log_softmax(self.fc4(hidden_emb), 1)
 
         return main_output, sub_output
 
     def training_step(self, batch, batch_idx):
         """Compute and return training loss."""
-        main_criterion = nn.CrossEntropyLoss()
-        sub_criterion = nn.BCELoss(reduction='mean')
+        main_criterion = nn.NLLLoss()
+        sub_criterion = nn.KLDivLoss()
         
         # compute loss
         main_output, sub_output = self.forward(
@@ -136,7 +142,7 @@ class BPM_MT(pl.LightningModule):
         # record loss values
         self.log("main_loss", main_loss, on_step=False, on_epoch=True)
         self.log("sub_loss", sub_loss, on_step=False, on_epoch=True)
-        self.log("total_loss", total_loss, progbar=True)
+        self.log("total_loss", total_loss, prog_bar=True)
 
         return total_loss
 
@@ -239,7 +245,7 @@ if __name__ == "__main__":
         EarlyStopping(
             monitor="f1",
             mode="max",
-            patience=5,
+            patience=20,
             strict=True,
             verbose=False,
         ),
