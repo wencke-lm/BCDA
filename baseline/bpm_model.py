@@ -72,7 +72,7 @@ class BPM_MT(pl.LightningModule):
         train=False
     ):
         """Define computation performed at model call."""
-        if len(text_input_ids.shape) < 3:
+        if len(text_input_ids.shape) < 2:
             text_input_ids = text_input_ids.unsqueeze(0)
             text_attention_mask = text_attention_mask.unsqueeze(0)
         if len(acoustic_input.shape) < 3:
@@ -113,7 +113,7 @@ class BPM_MT(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         """Compute and return training loss."""
         main_criterion = nn.NLLLoss()
-        sub_criterion = nn.KLDivLoss()
+        sub_criterion = nn.KLDivLoss(reduction="batchmean")
         
         # compute loss
         main_output, sub_output = self.forward(
@@ -148,7 +148,7 @@ class BPM_MT(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         """Compute and return validation loss."""
-        main_criterion = nn.CrossEntropyLoss()
+        main_criterion = nn.NLLLoss()
 
         # compute loss
         main_output, _ = self.forward(
