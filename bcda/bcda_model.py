@@ -44,6 +44,53 @@ class BCDAModel(pl.LightningModule):
             "CONTINUER": 1,
             "ASSESSMENT": 2
         }
+        self.sub_classification_head = nn.Linear(
+            768, 41
+        )
+        self.sub_label_to_idx = {
+            "": -1,
+            "%":0,
+            "^2":1,
+            "^g":2,
+            "^h":3,
+            "^q":4,
+            "aa":5,
+            "ad":6,
+            "am":7,
+            "ar":8,
+            "b":9,
+            "b^m":10,
+            "ba":11,
+            "bc":12,
+            "bd":13,
+            "bf":14,
+            "bh":15,
+            "bk":16,
+            "br":17,
+            "cc":18,
+            "fa":19,
+            "fc":20,
+            "fp":21,
+            "ft":22,
+            "h":23,
+            "na":24,
+            "nd":25,
+            "ng":26,
+            "nn":27,
+            "no":28,
+            "ny":29,
+            "qh":30,
+            "qo":31,
+            "qrr":32,
+            "qw":33,
+            "qw^d":34,
+            "qy":35,
+            "qy^d":36,
+            "sd":37,
+            "sv":38,
+            "t1":39,
+            "t3":40,
+        }
 
         for n, p in self.named_parameters():
             print(n, p.requires_grad)
@@ -79,7 +126,7 @@ class BCDAModel(pl.LightningModule):
                 *self.transformer.parameters(),
                 *self.text_encoder.model.parameters()
             ],
-            lr=0.0001,
+            lr=0.2*self.confg["optimizer"]["learning_rate"],
             betas=self.confg["optimizer"]["betas"],
             weight_decay=self.confg["optimizer"]["weight_decay"]
         )
@@ -92,19 +139,19 @@ class BCDAModel(pl.LightningModule):
             weight_decay=self.confg["optimizer"]["weight_decay"]
         )
 
-        it_per_epoch = 28
+        it_per_epoch = 6281
         freq = self.confg["optimizer"]["lr_scheduler_freq"]
 
         transf_lr = get_linear_schedule_with_warmup(
             optimizer=transf_opt,
-            num_warmup_steps=10*it_per_epoch/freq,
-            num_training_steps=20*it_per_epoch/freq
+            num_warmup_steps=5*it_per_epoch/freq,
+            num_training_steps=10*it_per_epoch/freq
         )
         other_lr = torch.optim.lr_scheduler.LinearLR(
             optimizer=other_opt,
             start_factor=1.0,
             end_factor=0.0,
-            total_iters=20*it_per_epoch/freq
+            total_iters=10*it_per_epoch/freq
         )
 
         return [transf_opt, other_opt], [transf_lr, other_lr]
@@ -133,26 +180,38 @@ class BCDAModel(pl.LightningModule):
         if self.confg["use_audio"] and self.confg["use_text"]:
             feat_emb = torch.cat((audio_emb, text_emb), 1)
 
-        return self.classification_head(feat_emb)
+        return self.classification_head(feat_emb), self.sub_classification_head(text_emb)
 
     def _shared_step(self, batch, batch_idx):
         """Prepare evaluation & backward pass."""
-        out = self(batch)
+        out, sub_out = self(batch)
         labels = torch.tensor(
             [self.label_to_idx[l] for l in batch["labels"]],
+            device=out.device
+        )
+        sub_labels = torch.tensor(
+            [self.sub_label_to_idx[l] for l in batch["sub_labels"]],
             device=out.device
         )
 
         loss = nn.functional.cross_entropy(
             out, labels, weight=torch.tensor([0.85, 1.125, 1.025], device=out.device)
         )
+        sub_loss = nn.functional.cross_entropy(
+            sub_out[sub_labels != -1], sub_labels[sub_labels != -1]
+        )
+        if not sub_loss.isnan():
+            total_loss = loss + 0.1*sub_loss
+        else:
+            total_loss = loss
 
-        return loss, labels, out
+        return total_loss, labels, out
 
     def training_step(self, batch, batch_idx):
         """Compute and return training loss."""
         loss, _, _ = self._shared_step(batch, batch_idx)
         self.log("train_loss", loss, on_step=False, on_epoch=True)
+        self.log("loss", loss, prog_bar=True)
 
         transf_opt, other_opt = self.optimizers()
         transf_lr, other_lr = self.lr_schedulers()
@@ -163,8 +222,10 @@ class BCDAModel(pl.LightningModule):
         self.manual_backward(loss)
         transf_opt.step()
         other_opt.step()
-        transf_lr.step()
-        other_lr.step()
+
+        if (batch_idx + 1) % self.confg["optimizer"]["lr_scheduler_freq"] == 0:
+            transf_lr.step()
+            other_lr.step()
 
         return loss
 

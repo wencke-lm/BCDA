@@ -17,7 +17,7 @@ from bcda.bcda_model import BCDAModel
 from bcda.utils import BCDataset
 
 
-BC_DATA = os.path.join("data", "swb", "utterance_is_backchannel_with_context.csv")
+BC_DATA = os.path.join("data", "swb", "utterance_is_backchannel_with_da_with_context.csv")
 
 
 def train(cfg_dict, init_state, ckpt_load, ckpt_save):

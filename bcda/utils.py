@@ -49,7 +49,7 @@ class BCDataset(torch.utils.data.IterableDataset):
                 sample = file.readline()
 
                 if sample:
-                    info, time_stamp, bc_type, *hist = sample.rstrip(
+                    info, time_stamp, bc_type, da, *hist = sample.rstrip(
                         "\n"
                     ).split("\t")
                     diag_id, bc_speaker = info[2:-1], info[-1]
@@ -69,7 +69,8 @@ class BCDataset(torch.utils.data.IterableDataset):
                             va_mask = torch.zeros(s["va"].shape[-1])
                             wave_mask = torch.zeros(s["waveform"].shape[-1])
 
-                        s["speakers"], s["labels"], contxt = add_info[i]
+                        s["speakers"], s["labels"], s["sub_labels"], contxt = add_info[i]
+                        print(s["sub_labels"])
                         if contxt:
                             encoded = SpartaModel.tokenize(contxt)
                             s["text_input_ids"] = encoded["input_ids"]
@@ -101,4 +102,4 @@ class BCDataset(torch.utils.data.IterableDataset):
                 if diag_id in self.corpus.split:
                     prev_diag_id = diag_id
                     time_stamps.append(Decimal(time_stamp))
-                    add_info.append((bc_speaker, bc_type, hist))
+                    add_info.append((bc_speaker, bc_type, da, hist))
