@@ -70,7 +70,6 @@ class BCDataset(torch.utils.data.IterableDataset):
                             wave_mask = torch.zeros(s["waveform"].shape[-1])
 
                         s["speakers"], s["labels"], s["sub_labels"], contxt = add_info[i]
-                        print(s["sub_labels"])
                         if contxt:
                             encoded = SpartaModel.tokenize(contxt)
                             s["text_input_ids"] = encoded["input_ids"]
