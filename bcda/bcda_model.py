@@ -35,6 +35,55 @@ class BCDAModel(pl.LightningModule):
                 self.confg["hist_n"]
             )
             feat_n += 768
+        # add dialogue act classification objective
+        if self.confg["use_multitask"]:
+            self.sub_classification_head = nn.Linear(
+                768, 41
+            )
+            self.sub_label_to_idx = {
+                "": -1,
+                "%":0,
+                "^2":1,
+                "^g":2,
+                "^h":3,
+                "^q":4,
+                "aa":5,
+                "ad":6,
+                "am":7,
+                "ar":8,
+                "b":9,
+                "b^m":10,
+                "ba":11,
+                "bc":12,
+                "bd":13,
+                "bf":14,
+                "bh":15,
+                "bk":16,
+                "br":17,
+                "cc":18,
+                "fa":19,
+                "fc":20,
+                "fp":21,
+                "ft":22,
+                "h":23,
+                "na":24,
+                "nd":25,
+                "ng":26,
+                "nn":27,
+                "no":28,
+                "ny":29,
+                "qh":30,
+                "qo":31,
+                "qrr":32,
+                "qw":33,
+                "qw^d":34,
+                "qy":35,
+                "qy^d":36,
+                "sd":37,
+                "sv":38,
+                "t1":39,
+                "t3":40,
+            }
 
         self.classification_head = nn.Linear(
             feat_n, 3
@@ -43,53 +92,6 @@ class BCDAModel(pl.LightningModule):
             "NO-BC": 0,
             "CONTINUER": 1,
             "ASSESSMENT": 2
-        }
-        self.sub_classification_head = nn.Linear(
-            768, 41
-        )
-        self.sub_label_to_idx = {
-            "": -1,
-            "%":0,
-            "^2":1,
-            "^g":2,
-            "^h":3,
-            "^q":4,
-            "aa":5,
-            "ad":6,
-            "am":7,
-            "ar":8,
-            "b":9,
-            "b^m":10,
-            "ba":11,
-            "bc":12,
-            "bd":13,
-            "bf":14,
-            "bh":15,
-            "bk":16,
-            "br":17,
-            "cc":18,
-            "fa":19,
-            "fc":20,
-            "fp":21,
-            "ft":22,
-            "h":23,
-            "na":24,
-            "nd":25,
-            "ng":26,
-            "nn":27,
-            "no":28,
-            "ny":29,
-            "qh":30,
-            "qo":31,
-            "qrr":32,
-            "qw":33,
-            "qw^d":34,
-            "qy":35,
-            "qy^d":36,
-            "sd":37,
-            "sv":38,
-            "t1":39,
-            "t3":40,
         }
 
         for n, p in self.named_parameters():
@@ -132,6 +134,7 @@ class BCDAModel(pl.LightningModule):
         )
         other_opt = torch.optim.AdamW([
                 *self.classification_head.parameters(),
+                *self.sub_classification_head.parameters(),
                 *self.text_encoder.ta_attention.parameters()
             ],
             lr=self.confg["optimizer"]["learning_rate"],
@@ -158,7 +161,6 @@ class BCDAModel(pl.LightningModule):
 
     def forward(self, x):
         """Define computation performed at model call."""
-        # add batch dimension if missing
 
         if self.confg["use_audio"]:
             audio_emb = self.transformer(
@@ -180,32 +182,38 @@ class BCDAModel(pl.LightningModule):
         if self.confg["use_audio"] and self.confg["use_text"]:
             feat_emb = torch.cat((audio_emb, text_emb), 1)
 
-        return self.classification_head(feat_emb), self.sub_classification_head(text_emb)
+        if not self.confg["use_multitask"]:
+            self.classification_head(feat_emb), None
+        return (
+            self.classification_head(feat_emb),
+            self.sub_classification_head(text_emb)
+        )
 
     def _shared_step(self, batch, batch_idx):
         """Prepare evaluation & backward pass."""
         out, sub_out = self(batch)
+
         labels = torch.tensor(
             [self.label_to_idx[l] for l in batch["labels"]],
             device=out.device
         )
-        sub_labels = torch.tensor(
-            [self.sub_label_to_idx[l] for l in batch["sub_labels"]],
-            device=out.device
-        )
-
         loss = nn.functional.cross_entropy(
             out, labels, weight=torch.tensor([0.85, 1.125, 1.025], device=out.device)
         )
-        sub_loss = nn.functional.cross_entropy(
-            sub_out[sub_labels != -1], sub_labels[sub_labels != -1]
-        )
-        if not sub_loss.isnan():
-            total_loss = loss + 0.1*sub_loss
-        else:
-            total_loss = loss
 
-        return total_loss, labels, out
+        if self.confg["use_multitask"]:
+            sub_labels = torch.tensor(
+                [self.sub_label_to_idx[l] for l in batch["sub_labels"]],
+                device=out.device
+            )
+            sub_loss = nn.functional.cross_entropy(
+                sub_out[sub_labels != -1], sub_labels[sub_labels != -1]
+            )
+            if not sub_loss.isnan():
+                loss = loss + 1*sub_loss
+                self.log("sub_loss", sub_loss, on_epoch=True)
+
+        return loss, labels, out
 
     def training_step(self, batch, batch_idx):
         """Compute and return training loss."""

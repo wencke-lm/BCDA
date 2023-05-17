@@ -24,8 +24,10 @@ def test(cfg_dict, model_state, test_file):
 
     # prepare model
     print("Build model ...")
-    model = BCDAModel.load_from_checkpoint(model_state)
+    model = BCDAModel.load_from_checkpoint(model_state, strict=False)
+    model.to("cuda:0" if torch.cuda.is_available() else "cpu")
     model.freeze()
+    print(model.training)
     print("COMPLETE")
 
     # evaluate model
@@ -38,7 +40,11 @@ def test(cfg_dict, model_state, test_file):
         if i%100 == 0:
             print(i)
 
-        outpt = int(torch.argmax(model(x), dim=1))
+        for k, v in x.items():
+            if torch.is_tensor(v):
+                x[k] = v.to("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        outpt = int(torch.argmax(model(x)[0], dim=1))
 
         true.append(model.label_to_idx[x["labels"]])
         pred.append(outpt)
@@ -84,7 +90,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data", metavar="DATA_PATH",
-        default="data/swb/utterance_is_backchannel_with_context.csv",
+        default="data/swb/utterance_is_backchannel_with_da_with_context.csv",
         help="path to plain BC record for testing"
     )
 
