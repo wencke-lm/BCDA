@@ -1,6 +1,6 @@
 Train model:
 ```
-python bpm_model.py
+python bpm_model.py --load CKPT_PATH
 ```
 Model states will be automatically saved to ../data/model_checkpoints
 Evaluate model:
