@@ -65,11 +65,19 @@ class BCDataset(torch.utils.data.IterableDataset):
                             prev_diag_id, time_stamps, test=True
                         )
                     ):
+                        s["speakers"], s["labels"], s["sub_labels"], contxt = add_info[i]
+
+                        if not self.corpus.audio_kwargs.get("mono", False):
+                            not_bc_speaker_ = {"A": 1, "B": 0}[s["speakers"]]
+                            s["waveform"] = s["waveform"][not_bc_speaker_].unsqueeze(0)
+                            bc_speaker_ = {"A": 0, "B": 1}[s["speakers"]]
+                            if s["labels"] != "NO-BC":
+                                assert s["va"][bc_speaker_][-1] == 0
+
                         if va_mask is None:
                             va_mask = torch.zeros(s["va"].shape[-1])
                             wave_mask = torch.zeros(s["waveform"].shape[-1])
 
-                        s["speakers"], s["labels"], s["sub_labels"], contxt = add_info[i]
                         if contxt:
                             encoded = SpartaModel.tokenize(contxt)
                             s["text_input_ids"] = encoded["input_ids"]

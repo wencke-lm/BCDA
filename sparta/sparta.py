@@ -3,6 +3,7 @@ from transformers import BertTokenizer, BertModel
 
 from sparta.ta_attention import TimeAwareAttention
 
+import torch
 
 class SpartaModel(nn.Module):
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
@@ -25,6 +26,7 @@ class SpartaModel(nn.Module):
         self.set_llm_mode(True)
 
         self.ta_attention = TimeAwareAttention(768, 768)
+
 
     def forward(self, input_ids, attention_mask):
         if len(input_ids.shape) < 3:

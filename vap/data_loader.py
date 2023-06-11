@@ -137,6 +137,9 @@ class ShuffledIterableDataset(IterableDataset, ABC):
         sr = diag["sample_rate"]
 
         for ts in time_stamps:
+            # to make sure the model doesnt see the prediction
+            ts -= Decimal("0.00001")
+            # slight adjustment to make sure that our model does not sheet
             start = max(ts - Decimal(self.sample_len - self.sample_overlap), 0)
             end = ts + Decimal(self.sample_overlap)
 
@@ -500,7 +503,7 @@ class SwitchboardCorpus(ShuffledIterableDataset):
                     # collect full IPUs
                     # (= speech units preceeded and followed by silence/noise)
                     if word.strip() not in {
-                        "[silence]", "[noise]",
+                        "[silence]", "[noise]", "[laughter]", "[vocalized-noise]",
                         "<b_aside>", "<e_aside>"
                     }:
                         if last_start is None:

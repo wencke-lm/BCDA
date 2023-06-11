@@ -124,9 +124,9 @@ class BCDAModel(pl.LightningModule):
     def configure_optimizers(self):
         """Define algorithms and schedulers used in optimization."""
         transf_opt = torch.optim.AdamW([
-                *self.encoder.parameters(),
-                *self.transformer.parameters(),
-                *self.text_encoder.model.parameters()
+                *(self.encoder.parameters() if self.confg["use_audio"] else []),
+                *(self.transformer.parameters() if self.confg["use_audio"] else []),
+                *(self.text_encoder.model.parameters() if self.confg["use_text"] else [])
             ],
             lr=0.2*self.confg["optimizer"]["learning_rate"],
             betas=self.confg["optimizer"]["betas"],
@@ -134,8 +134,8 @@ class BCDAModel(pl.LightningModule):
         )
         other_opt = torch.optim.AdamW([
                 *self.classification_head.parameters(),
-                *self.sub_classification_head.parameters(),
-                *self.text_encoder.ta_attention.parameters()
+                *(self.sub_classification_head.parameters() if self.confg["use_multitask"] else []),
+                *(self.text_encoder.ta_attention.parameters() if self.confg["use_text"] else [])
             ],
             lr=self.confg["optimizer"]["learning_rate"],
             betas=self.confg["optimizer"]["betas"],
@@ -147,7 +147,7 @@ class BCDAModel(pl.LightningModule):
 
         transf_lr = get_linear_schedule_with_warmup(
             optimizer=transf_opt,
-            num_warmup_steps=5*it_per_epoch/freq,
+            num_warmup_steps=1*it_per_epoch/freq,
             num_training_steps=10*it_per_epoch/freq
         )
         other_lr = torch.optim.lr_scheduler.LinearLR(
@@ -183,7 +183,7 @@ class BCDAModel(pl.LightningModule):
             feat_emb = torch.cat((audio_emb, text_emb), 1)
 
         if not self.confg["use_multitask"]:
-            self.classification_head(feat_emb), None
+            return self.classification_head(feat_emb), None
         return (
             self.classification_head(feat_emb),
             self.sub_classification_head(text_emb)
@@ -197,8 +197,9 @@ class BCDAModel(pl.LightningModule):
             [self.label_to_idx[l] for l in batch["labels"]],
             device=out.device
         )
+        weights = torch.tensor([0.80, 1.3, 1.1], device=out.device)
         loss = nn.functional.cross_entropy(
-            out, labels, weight=torch.tensor([0.85, 1.125, 1.025], device=out.device)
+            out, labels, weight=weights
         )
 
         if self.confg["use_multitask"]:
@@ -210,7 +211,7 @@ class BCDAModel(pl.LightningModule):
                 sub_out[sub_labels != -1], sub_labels[sub_labels != -1]
             )
             if not sub_loss.isnan():
-                loss = loss + 1*sub_loss
+                loss = 0.7*loss + 0.3*sub_loss
                 self.log("sub_loss", sub_loss, on_epoch=True)
 
         return loss, labels, out
