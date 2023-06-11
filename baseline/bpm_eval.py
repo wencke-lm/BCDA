@@ -20,7 +20,7 @@ def test(model_state, test_file):
         os.path.join(path, "data", "swb", "conversations.eval"),
         os.path.join(
             path, "data", "swb",
-            "utterance_is_backchannel_with_sentiment_with_context.csv"
+            "utterance_is_backchannel_with_sent_with_context.csv"
         ),
         os.path.join(path, "data", "swb", "swb_audios")
     )
@@ -29,6 +29,7 @@ def test(model_state, test_file):
     # prepare model
     print("Build model ...")
     model = BPM_MT("bert-base-uncased").load_from_checkpoint(model_state)
+    model.to("cuda:0" if torch.cuda.is_available() else "cpu")
     model.freeze()
     print("COMPLETE")
 
@@ -41,6 +42,10 @@ def test(model_state, test_file):
     for i, x in enumerate(iter(X)):
         if i%100 == 0:
             print(i)
+
+        for k, v in x.items():
+            if torch.is_tensor(v):
+                x[k] = v.to("cuda:0" if torch.cuda.is_available() else "cpu")
 
         main_output, sub_output = model(
             x["input_ids"], x["attention_mask"],
@@ -88,7 +93,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data", metavar="DATA_PATH",
-        default="data/swb/utterance_is_backchannel_with_sentiment_with_context.csv",
+        default="data/swb/utterance_is_backchannel_with_sent_with_context.csv",
         help="path to plain BC record for testing"
     )
 

@@ -31,6 +31,7 @@ class BPM_MT(pl.LightningModule):
             attention_probs_dropout_prob=0.3,
             hidden_dropout_prob=0.3
         )
+        self.lm.resize_token_embeddings(len(BCDataset.tokenizer))
         # Additional Parameter
         self.lstm = nn.LSTM(
             13, LSTM_DIM, bidirectional=True, batch_first=True
@@ -113,7 +114,7 @@ class BPM_MT(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         """Compute and return training loss."""
         main_criterion = nn.NLLLoss()
-        sub_criterion = nn.KLDivLoss(reduction="batchmean")
+        sub_criterion = nn.NLLLoss()
         
         # compute loss
         main_output, sub_output = self.forward(
@@ -126,7 +127,7 @@ class BPM_MT(pl.LightningModule):
         )
         main_loss, sub_loss = (
             main_criterion(main_output, main_labels)
-            , sub_criterion(sub_output, batch["sub_labels"])
+            , sub_criterion(sub_output, batch["sub_labels"].argmax(dim=1))
         )
         total_loss = (1-0.1)*main_loss + 0.1*sub_loss
 
@@ -212,7 +213,7 @@ if __name__ == "__main__":
         os.path.join(path, "data", "swb", "conversations.train"),
         os.path.join(
             path, "data", "swb",
-            "utterance_is_backchannel_with_sentiment_with_context.csv"
+            "utterance_is_backchannel_with_sent_with_context.csv"
         ),
         os.path.join(path, "data", "swb", "swb_audios")
     )
@@ -221,7 +222,7 @@ if __name__ == "__main__":
         os.path.join(path, "data", "swb", "conversations.valid"),
         os.path.join(
             path, "data", "swb",
-            "utterance_is_backchannel_with_sentiment_with_context.csv"
+            "utterance_is_backchannel_with_sent_with_context.csv"
         ),
         os.path.join(path, "data", "swb", "swb_audios")
     )

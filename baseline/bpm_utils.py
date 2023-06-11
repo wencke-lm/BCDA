@@ -14,6 +14,9 @@ class BCDataset(torch.utils.data.IterableDataset):
     tokenizer = BertTokenizer.from_pretrained(
         "bert-base-uncased"
     )
+    tokenizer.add_special_tokens(
+        {"additional_special_tokens": ["[S]", "[L]"]}
+    )
 
     # sentiment soft label extractor
     sent_tokenizer = AutoTokenizer.from_pretrained(
@@ -49,7 +52,6 @@ class BCDataset(torch.utils.data.IterableDataset):
         super().__init__()
 
         # data sources
-        print(split_info)
         if isinstance(split_info, str):
             with open(split_info, 'r', encoding="utf-8") as data:
                 self.split_info = data.read().strip().split("\n")
@@ -74,7 +76,7 @@ class BCDataset(torch.utils.data.IterableDataset):
         """
         return cls.tokenizer(
             utt, return_tensors='pt',
-            padding="max_length", max_length=128, truncation=False
+            padding="max_length", max_length=256, truncation=True
         )
 
     @classmethod
@@ -91,14 +93,14 @@ class BCDataset(torch.utils.data.IterableDataset):
         """
         encoded_input = cls.sent_tokenizer(
             utt, return_tensors='pt',
-            padding="max_length", max_length=128, truncation=False
+            padding="max_length", max_length=256, truncation=True
         ).to("cuda:0" if torch.cuda.is_available() else "cpu")
         output = cls.sent_model(**encoded_input)
 
         return output[0].softmax(1).squeeze(0)
 
     @staticmethod
-    def get_mfcc_feature(audio_path, end, window_len=25, step_len=10):
+    def get_mfcc_feature(audio_path, end, window_len=25, step_len=10, channel=None):
         """Extract Mel-frequency Cepstrum Coefficients.
 
         Args:
@@ -113,9 +115,16 @@ class BCDataset(torch.utils.data.IterableDataset):
               F: Number of MFCC coefficients (= 13)
 
         """
-        audio, sr = librosa.load(
-            audio_path, offset=end-1.5, duration=1.5
-        )
+        if channel is None:
+            audio, sr = librosa.load(
+                audio_path, offset=end-1.5, duration=1.5, mono=True
+            )
+        else:
+            audio, sr = librosa.load(
+                audio_path, offset=end-1.5, duration=1.5, mono=False
+            )
+            audio = audio[channel]
+
         mfcc = librosa.feature.mfcc(
             y=audio, sr=sr, n_mfcc=13, center=False,
             n_fft=sr//1000*window_len, hop_length=sr//1000*step_len
@@ -135,10 +144,20 @@ class BCDataset(torch.utils.data.IterableDataset):
         sent_feat = torch.tensor(
             [float(neg_sent), float(neut_sent), float(pos_sent)]
         )
-        text_feat = self.tokenize(hist[0][4:])
+
+        text = []
+        for t in hist[:3]:
+            if t.startswith(hist[0][:4]):
+                text.append(t[4:])
+            else:
+                break
+        text = hist[0][:4] + " ".join(reversed(text))
+
+        text_feat = self.tokenize(text)
         audio_feat = self.get_mfcc_feature(
             os.path.join(self.audio_path, f"sw0{diag_id}.sph"),
-            float(time_stamp)
+            float(time_stamp),
+            channel={"A": 1, "B": 0}[bc_speaker]
         )
 
         return {
