@@ -84,6 +84,15 @@ class BCDAModel(pl.LightningModule):
                 "t1":39,
                 "t3":40,
             }
+        if self.confg.get("use_sent", False):
+            self.sent_classification_head = nn.Linear(
+                768, 3
+            )
+            self.sent_label_to_idx = {
+                "negative": 0,
+                "neutral": 1,
+                "positive": 2
+            }
 
         self.classification_head = nn.Linear(
             feat_n, 3
@@ -182,11 +191,16 @@ class BCDAModel(pl.LightningModule):
         if self.confg["use_audio"] and self.confg["use_text"]:
             feat_emb = torch.cat((audio_emb, text_emb), 1)
 
-        if not self.confg["use_multitask"]:
-            return self.classification_head(feat_emb), None
+        sub_out = None
+        sent_out = None
+        if self.confg["use_multitask"]:
+            sub_out = self.sub_classification_head(text_emb)
+        if self.confg.get("use_sent", False):
+            sent_out = self.sent_classification_head(text_emb)
         return (
             self.classification_head(feat_emb),
-            self.sub_classification_head(text_emb)
+            sub_out,
+            sent_out
         )
 
     def _shared_step(self, batch, batch_idx):
@@ -202,6 +216,8 @@ class BCDAModel(pl.LightningModule):
             out, labels, weight=weights
         )
 
+        loss1 = None
+        loss2 = None
         if self.confg["use_multitask"]:
             sub_labels = torch.tensor(
                 [self.sub_label_to_idx[l] for l in batch["sub_labels"]],
@@ -211,8 +227,26 @@ class BCDAModel(pl.LightningModule):
                 sub_out[sub_labels != -1], sub_labels[sub_labels != -1]
             )
             if not sub_loss.isnan():
-                loss = 0.7*loss + 0.3*sub_loss
+                loss1 = 0.7*loss + 0.3*sub_loss
                 self.log("sub_loss", sub_loss, on_epoch=True)
+
+        if self.confg.get("use_sent", False):
+            sent_labels = torch.tensor(
+                [self.sent_label_to_idx[l] for l in batch["sent_labels"]],
+                device=out.device
+            )
+            sent_loss = nn.functional.cross_entropy(
+                sent_out, sent_labels
+            )
+            loss2 = 0.9*loss + 0.1*sent_loss
+            self.log("sent_loss", sent_loss, on_epoch=True)
+
+        if loss1 is not None and loss2 is not None:
+            loss = (loss1 + loss2)/2
+        elif loss1 is not None:
+            loss = loss1
+        elif loss2 is not None:
+            loss = loss2
 
         return loss, labels, out
 

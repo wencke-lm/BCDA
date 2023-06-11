@@ -49,10 +49,12 @@ class BCDataset(torch.utils.data.IterableDataset):
                 sample = file.readline()
 
                 if sample:
-                    info, time_stamp, bc_type, da, *hist = sample.rstrip(
+                    info, time_stamp, bc_type, da, neg_sent, neut_sent, pos_sent, *hist = sample.rstrip(
                         "\n"
                     ).split("\t")
                     diag_id, bc_speaker = info[2:-1], info[-1]
+                    sent_idx = int(torch.argmax(torch.tensor([float(neg_sent), (neut_sent), (pos_sent)])))
+                    sent = {0: "negative", 1: "neutral", 2: "positive"}
 
                 # load all samples belonging to one dialogue together
                 if time_stamps and (prev_diag_id != diag_id or not sample):
@@ -65,7 +67,7 @@ class BCDataset(torch.utils.data.IterableDataset):
                             prev_diag_id, time_stamps, test=True
                         )
                     ):
-                        s["speakers"], s["labels"], s["sub_labels"], contxt = add_info[i]
+                        s["speakers"], s["labels"], s["sub_labels"], s["sent_labels"], contxt = add_info[i]
 
                         if not self.corpus.audio_kwargs.get("mono", False):
                             not_bc_speaker_ = {"A": 1, "B": 0}[s["speakers"]]
@@ -109,4 +111,4 @@ class BCDataset(torch.utils.data.IterableDataset):
                 if diag_id in self.corpus.split:
                     prev_diag_id = diag_id
                     time_stamps.append(Decimal(time_stamp))
-                    add_info.append((bc_speaker, bc_type, da, hist))
+                    add_info.append((bc_speaker, bc_type, da, sent, hist))
