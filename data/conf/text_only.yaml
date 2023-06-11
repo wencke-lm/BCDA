@@ -45,11 +45,11 @@ predictor:
 
 trainer:
   deterministic: true
-  max_epochs: 5
+  max_epochs: 10
   accelerator: 'gpu'
 
 training:
-  use_audio: true
+  use_audio: false
   use_text: true
   use_multitask: false
 

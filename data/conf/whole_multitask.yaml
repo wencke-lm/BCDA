@@ -51,7 +51,7 @@ trainer:
 training:
   use_audio: true
   use_text: true
-  use_multitask: false
+  use_multitask: true
 
   bert_dropout: 0.3
   hist_n: 3
