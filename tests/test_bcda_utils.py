@@ -27,7 +27,7 @@ class TestBCDataset:
         bc_path = os.path.join(
            "data",
            "swb",
-           "utterance_is_backchannel.csv"
+           "utterance_is_backchannel_with_da_with_context.csv"
         )
 
         dataset = BCDataset(swb, bc_path)
@@ -50,7 +50,7 @@ class TestBCDataset:
         bc_path = os.path.join(
            "data",
            "swb",
-           "utterance_is_backchannel.csv"
+           "utterance_is_backchannel_with_da_with_context.csv"
         )
 
         dataset = BCDataset(swb, bc_path)

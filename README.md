@@ -9,6 +9,13 @@ Pretraining for the Voice Activity Projection Model:
 >>> python vap_train.py data/conf/vap-best.yaml
 ```
 
+Training for the Backchannel Prediction Model:
+```
+>>> python bcda_train.py data/conf/whole.yaml --pretrained data/model/vap_pretrained_model-best.ckpt
+```
+All configurations used in the paper are found in the folder `data/conf`.
+
+
 
 ## Set Up
 
