@@ -14,7 +14,12 @@ Training for the Backchannel Prediction Model:
 >>> python bcda_train.py data/conf/whole.yaml --pretrained data/model/vap_pretrained_model-best.ckpt
 ```
 All configurations used in the paper are found in the folder `data/conf`.
+Trained models will be saved to `/data/model_checkpoints` per default.
 
+Evaluating a Backchannel Prediction Model, e.g.:
+```
+>>> python bcda_eval.py data/conf/whole.yaml data/model_checkpoints/checkpoint-epoch=3-step=50256.ckpt
+```
 
 
 ## Set Up
