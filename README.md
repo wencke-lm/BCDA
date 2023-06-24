@@ -82,3 +82,7 @@ data/swb/
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> 21/  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> ...  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> 49/  
+
+### Step 6:
+In order to run the testsuite, read the instructions in `tests/data/`
+Finally, check whether the code is running ordlerly throug: python -m pytest
