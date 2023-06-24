@@ -67,9 +67,9 @@ class TestShuffledIterableDataset:
         )
 
         assert sample["va"][0, :90].sum() == 0
-        assert sample["va"][0, 91] == 1
+        assert sample["va"][0, 91] == 0
         assert sample["va"][1, :95].sum() == 0
-        assert sample["va"][1, 96] == 1
+        assert sample["va"][1, 96] == 0
 
     def test_select_samples_input_window_ends_at_prediction(self):
         swb_path = os.path.join(
@@ -283,7 +283,7 @@ class TestSwitchboardCorpus:
 
 
                     if word.strip() not in {
-                        "[silence]", "[noise]"
+                        "[silence]", "[noise]", "[laughter]", "[vocalized-noise]"
                     }:
                         va[i].append([float(start), float(end)])
 
@@ -336,5 +336,5 @@ class TestSwitchboardCorpus:
 
         out = self._get_activity_inefficently(swb, 2158)
 
-        assert len(out[0]) == 955
-        assert len(out[1]) == 1329
+        assert len(out[0]) == 949
+        assert len(out[1]) == 1324

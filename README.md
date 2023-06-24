@@ -9,6 +9,18 @@ Pretraining for the Voice Activity Projection Model:
 >>> python vap_train.py data/conf/vap-best.yaml
 ```
 
+Training for the Backchannel Prediction Model:
+```
+>>> python bcda_train.py data/conf/whole.yaml --pretrained data/model/vap_pretrained_model-best.ckpt
+```
+All configurations used in the paper are found in the folder `data/conf`.
+Trained models will be saved to `/data/model_checkpoints` per default.
+
+Evaluating a Backchannel Prediction Model, e.g.:
+```
+>>> python bcda_eval.py data/conf/whole.yaml data/model_checkpoints/checkpoint-epoch=3-step=50256.ckpt
+```
+
 
 ## Set Up
 
@@ -70,3 +82,7 @@ data/swb/
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> 21/  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> ...  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> 49/  
+
+### Step 6:
+In order to run the testsuite, read the instructions in `tests/data/`
+Finally, check whether the code is running ordlerly throug: python -m pytest
