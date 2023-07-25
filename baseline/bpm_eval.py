@@ -83,8 +83,8 @@ def test(model_state, test_file):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Interface to test a Voice Activity Projection model.",
-        epilog="The following arguments are required: CONFIG CKPT_PATH"
+        description="Interface to test the BPM_MT (2021) Model.",
+        epilog="The following arguments are required: CKPT_PATH"
     )
 
     parser.add_argument(

@@ -246,7 +246,7 @@ if __name__ == "__main__":
         EarlyStopping(
             monitor="f1",
             mode="max",
-            patience=20,
+            patience=10,
             strict=True,
             verbose=False,
         ),
