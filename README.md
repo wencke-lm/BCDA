@@ -6,7 +6,7 @@
 ## Usage
 Pretraining for the Voice Activity Projection Model:
 ```
->>> python vap_train.py data/conf/vap-best.yaml
+>>> python vap_train.py data/conf/vap_pretrained_model-best.yaml
 ```
 
 Training for the Backchannel Prediction Model:
