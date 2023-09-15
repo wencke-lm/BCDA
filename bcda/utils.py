@@ -53,7 +53,7 @@ class BCDataset(torch.utils.data.IterableDataset):
                         "\n"
                     ).split("\t")
                     diag_id, bc_speaker = info[2:-1], info[-1]
-                    sent_idx = int(torch.argmax(torch.tensor([float(neg_sent), (neut_sent), (pos_sent)])))
+                    sent_idx = int(torch.argmax(torch.tensor([float(neg_sent), float(neut_sent), float(pos_sent)])))
                     sent = {0: "negative", 1: "neutral", 2: "positive"}
 
                 # load all samples belonging to one dialogue together

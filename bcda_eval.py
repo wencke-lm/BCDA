@@ -90,7 +90,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data", metavar="DATA_PATH",
-        default="data/swb/utterance_is_backchannel_with_da_with_context.csv",
+        default="data/swb/utterance_is_backchannel_with_da_with_sent_with_context.csv",
         help="path to plain BC record for testing"
     )
 

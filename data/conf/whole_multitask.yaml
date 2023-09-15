@@ -45,7 +45,7 @@ predictor:
 
 trainer:
   deterministic: true
-  max_epochs: 5
+  max_epochs: 10
   accelerator: 'gpu'
 
 training:
