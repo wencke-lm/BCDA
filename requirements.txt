@@ -1,5 +1,5 @@
 cython
-lightning
+lightning==1.9.3
 pytest
 pytest-depends==1.0
 pyyaml
